@@ -7,22 +7,13 @@ from autoqc.structural import run_structural
 from autoqc.verdict import compute_verdict
 from autoqc.report import to_record, to_markdown
 from autoqc.model import Verdict
-from autoqc.llm import default_client
-from autoqc.semantic.engine import run_check
-from autoqc.semantic.checks import SEMANTIC_CHECKS
 
 _EXIT = {Verdict.SOUND: 0, Verdict.NEEDS_HUMAN_REVIEW: 1, Verdict.NOT_SOUND: 2}
 
 
-def run(bundle_dir, out_dir, llm=None, k: int = 3) -> Verdict:
+def run(bundle_dir, out_dir) -> Verdict:
     bundle = load_bundle(Path(bundle_dir))
     results = run_structural(bundle)
-
-    client = llm if llm is not None else default_client()
-    if client is not None:
-        for check in SEMANTIC_CHECKS:
-            results.append(run_check(check, bundle, client, k=k))
-
     verdict = compute_verdict(results)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

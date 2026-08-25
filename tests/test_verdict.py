@@ -30,3 +30,10 @@ def test_all_pass_is_sound():
 def test_reject_beats_warn():
     results = [_r(Severity.REJECT, False), _r(Severity.WARN, False)]
     assert compute_verdict(results) is Verdict.NOT_SOUND
+
+
+def test_disputed_reject_routes_to_human():
+    # A reject-severity check that failed but is flagged for human review
+    # (ensemble split or adversary overturn) must escalate, not auto-reject.
+    results = [_r(Severity.REJECT, False, needs_human=True)]
+    assert compute_verdict(results) is Verdict.NEEDS_HUMAN_REVIEW

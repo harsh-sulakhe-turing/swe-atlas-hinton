@@ -3,7 +3,11 @@ from autoqc.model import CheckResult, Severity, Verdict
 
 
 def compute_verdict(results: list[CheckResult]) -> Verdict:
-    if any(r.severity is Severity.REJECT and not r.passed for r in results):
+    # An *undisputed* reject-severity failure is a hard rejection. A *disputed*
+    # one (ensemble split or adversary overturn set needs_human) escalates to a
+    # human instead — otherwise the adversary's defend side would be dead code.
+    if any(r.severity is Severity.REJECT and not r.passed and not r.needs_human
+           for r in results):
         return Verdict.NOT_SOUND
     warn_fail = any(r.severity is Severity.WARN and not r.passed for r in results)
     needs_human = any(r.needs_human for r in results)
