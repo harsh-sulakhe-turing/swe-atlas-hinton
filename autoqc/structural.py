@@ -5,6 +5,7 @@ from autoqc.model import CheckResult, Stage, Severity
 
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 TITLE_RE = re.compile(r"^\s*([12])\.(\d+)\s*:")
+VALID_TYPES = {"positive hli verifier", "negative hli verifier"}
 
 
 def _ok(id, name, sev, detail="", evidence=None):
@@ -92,6 +93,39 @@ def _s06(b: Bundle) -> CheckResult:
     return _ok("S06", n, s)
 
 
+def _s07(b: Bundle) -> CheckResult:
+    n, s = "Type vocabulary", Severity.WARN
+    for it in _items(b):
+        if not isinstance(it, dict):
+            continue
+        ann = it.get("annotations", {})
+        if ann.get("type") not in VALID_TYPES:
+            return _fail("S07", n, s, f"unexpected type {ann.get('type')!r}")
+        if ann.get("importance") != "must have":
+            return _fail("S07", n, s, f"unexpected importance {ann.get('importance')!r}")
+    return _ok("S07", n, s)
+
+
+def _s08(b: Bundle) -> CheckResult:
+    n, s = "Sequential numbering", Severity.WARN
+    nums = {"1": [], "2": []}
+    for it in _items(b):
+        if not isinstance(it, dict):
+            continue
+        m = TITLE_RE.match(str(it.get("title", "")))
+        if m:
+            nums[m.group(1)].append(int(m.group(2)))
+    for prefix, seq in nums.items():
+        if not seq:
+            continue
+        expected = list(range(1, len(seq) + 1))
+        if sorted(seq) != expected:
+            return _fail("S08", n, s,
+                         f"{prefix}.x numbering not sequential: got {sorted(seq)}")
+    return _ok("S08", n, s)
+
+
 def run_structural(bundle: Bundle) -> list[CheckResult]:
     return [_s01(bundle), _s02(bundle), _s03(bundle),
-            _s04(bundle), _s05(bundle), _s06(bundle)]
+            _s04(bundle), _s05(bundle), _s06(bundle),
+            _s07(bundle), _s08(bundle)]
