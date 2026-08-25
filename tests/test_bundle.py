@@ -48,3 +48,29 @@ def test_missing_files_flagged(tmp_path):
     assert b.files_present["tests/prompt.txt"] is True
     assert b.files_present["environment/Dockerfile"] is False
     assert b.task_toml is None
+
+
+def test_malformed_toml_metadata_not_dict(tmp_path):
+    """Test that non-dict metadata in task.toml does not raise AttributeError."""
+    (tmp_path / "tests").mkdir(parents=True)
+    (tmp_path / "tests/prompt.txt").write_text("q")
+    # Write task.toml where metadata is a scalar, not a table
+    (tmp_path / "task.toml").write_text('metadata = 5\n')
+    b = load_bundle(tmp_path)
+    # Should not raise, and repository/base_commit should be None
+    assert b.repository is None
+    assert b.base_commit is None
+    # task_toml should still be parsed successfully
+    assert isinstance(b.task_toml, dict)
+
+
+def test_non_utf8_rubrics_not_raised(tmp_path):
+    """Test that non-UTF-8 bytes in rubrics.json do not raise UnicodeDecodeError."""
+    (tmp_path / "tests").mkdir(parents=True)
+    (tmp_path / "tests/prompt.txt").write_text("q")
+    # Write non-UTF-8 bytes to rubrics.json
+    (tmp_path / "tests/rubrics.json").write_bytes(b"\xff\xfe\x00")
+    b = load_bundle(tmp_path)
+    # Should not raise
+    assert b.rubrics is None
+    assert b.rubrics_error is not None

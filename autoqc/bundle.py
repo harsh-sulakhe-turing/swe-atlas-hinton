@@ -34,7 +34,7 @@ class Bundle:
 def _read_text(p: Path) -> str | None:
     try:
         return p.read_text()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -45,7 +45,10 @@ def load_bundle(root: Path) -> Bundle:
     rubrics_raw = _read_text(root / "tests/rubrics.json")
     rubrics, rubrics_error = None, None
     if rubrics_raw is None:
-        rubrics_error = "tests/rubrics.json is missing"
+        if (root / "tests/rubrics.json").exists():
+            rubrics_error = "tests/rubrics.json is unreadable"
+        else:
+            rubrics_error = "tests/rubrics.json is missing"
     else:
         try:
             rubrics = json.loads(rubrics_raw)
@@ -57,7 +60,9 @@ def load_bundle(root: Path) -> Bundle:
     if raw_toml is not None:
         try:
             task_toml = tomllib.loads(raw_toml)
-            meta = task_toml.get("metadata", {})
+            meta = task_toml.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
             repository = meta.get("repository")
             base_commit = meta.get("base_commit")
         except tomllib.TOMLDecodeError:
