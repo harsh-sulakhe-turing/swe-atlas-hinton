@@ -78,6 +78,36 @@ run_agent(role, context, tools, model_client, max_turns) -> AgentResult
   `needs_human` sentinel — never a crash, never a silent pass. Structural results
   already computed are never discarded.
 
+## 3.1 `run_bash` safety model
+
+`run_bash` (factual role only) is constrained in three layers, in priority order.
+A single command allowlist is deliberately **not** the primary control: Q06b must
+run the project's own build/test/repro (varies per repo), and any allowlist
+permissive enough to do that must include an interpreter or build tool
+(`python -c`, `make`, `bash -c`) — i.e. arbitrary execution — so it gives false
+confidence while blocking legitimate verification.
+
+1. **The container is the boundary (hard control).** The per-task container is
+   disposable and run with **`--network=none`** — the repo and deps are baked in
+   at `base_commit` during image *build*, so nothing needs network at run time;
+   this kills exfiltration and external reach (the orchestrator still calls the
+   gateway from outside the container). Plus non-root, `--cap-drop=ALL`,
+   read-only root fs with a writable scratch dir, no host mounts, no docker
+   socket, and CPU/memory/pids/wall-clock limits. Every command has a timeout and
+   an output-size cap.
+2. **Q06a read-only allowlist.** Source-level verification (the majority of
+   claims) uses an inspection-only allowlist — `cat`, `grep`/`rg`, `find`, `ls`,
+   `head`/`tail`, `git show`, `git log`. No execution, no writes; safe and
+   sufficient for reading source.
+3. **Q06b denylist (defense-in-depth).** Runtime verification (the minority)
+   needs the full sandboxed shell, guarded by a denylist for obviously
+   out-of-scope patterns (`curl`/`wget`, writes outside scratch, `sudo`, package
+   installs, `rm -rf /`). The network-isolated ephemeral container is what makes
+   running arbitrary project code safe here.
+
+This reuses the Q06a/Q06b split from the rubric design: the source pass is
+allowlisted, the runtime pass is container-sandboxed.
+
 ## 4. The structured contract (the guardrail)
 
 The agent is a **strict executor of the calibrated 12 checks, not a free-form
