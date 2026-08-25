@@ -1,6 +1,6 @@
 from __future__ import annotations
 from autoqc.bundle import Bundle
-from autoqc.model import CheckResult, Verdict
+from autoqc.model import CheckResult, Severity, Verdict
 
 
 def _result_dict(r: CheckResult) -> dict:
@@ -24,3 +24,26 @@ def to_record(bundle: Bundle, results: list[CheckResult],
         "verdict": verdict.value,
         "results": [_result_dict(r) for r in results],
     }
+
+
+def to_markdown(bundle: Bundle, results: list[CheckResult], verdict: Verdict) -> str:
+    lines = [f"# AutoQC report — {bundle.root.name}",
+             "", f"**Verdict:** `{verdict.value}`", ""]
+    rejects = [r for r in results if r.severity is Severity.REJECT and not r.passed]
+    warns = [r for r in results if r.severity is Severity.WARN and not r.passed]
+
+    if rejects:
+        lines.append("## Must fix (reject)")
+        for r in rejects:
+            lines.append(f"- **{r.id} {r.name}** — {r.detail}")
+            for e in r.evidence:
+                lines.append(f"  - evidence: {e}")
+        lines.append("")
+    if warns:
+        lines.append("## Review these (warn)")
+        for r in warns:
+            lines.append(f"- **{r.id} {r.name}** — {r.detail}")
+        lines.append("")
+    if not rejects and not warns:
+        lines.append("No issues found.")
+    return "\n".join(lines)
