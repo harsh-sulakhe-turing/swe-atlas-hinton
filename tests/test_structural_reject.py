@@ -70,6 +70,13 @@ def test_s06_missing_dockerfile_fails(tmp_path):
     assert _by_id(run_structural(b))["S06"].passed is False
 
 
+def test_s02_non_dict_annotations_does_not_raise(tmp_path):
+    bad = {"id": "a" * 32, "title": "1.1: States X", "annotations": "must have"}
+    results = run_structural(_bundle(tmp_path, [bad]))
+    assert len(results) == 8
+    assert _by_id(results)["S02"].passed is False
+
+
 def test_all_pass_on_good_bundle(tmp_path):
     good = [_positive("1.1"),
             {"id": "b" * 32, "title": "2.1: Claims X is false",

@@ -64,7 +64,11 @@ def load_bundle(root: Path) -> Bundle:
             if not isinstance(meta, dict):
                 meta = {}
             repository = meta.get("repository")
+            if not isinstance(repository, str):
+                repository = None
             base_commit = meta.get("base_commit")
+            if not isinstance(base_commit, str):
+                base_commit = None
         except tomllib.TOMLDecodeError:
             task_toml = None
 

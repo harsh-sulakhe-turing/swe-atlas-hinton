@@ -33,6 +33,19 @@ def test_good_bundle_is_sound_and_writes_reports(tmp_path):
     assert (out / "report.md").read_text().startswith("# AutoQC report")
 
 
+def test_unquoted_toml_date_base_commit_does_not_raise(tmp_path):
+    bundle = tmp_path / "task"
+    bundle.mkdir()
+    _good(bundle)
+    (bundle / "task.toml").write_text(
+        '[metadata]\nrepository="o/r"\nbase_commit = 2021-01-01\n')
+    out = tmp_path / "out"
+    verdict = run(bundle, out)
+    assert verdict is Verdict.NOT_SOUND
+    rec = json.loads((out / "review_record.json").read_text())
+    assert rec["task"]["base_commit"] is None
+
+
 def test_malformed_bundle_is_not_sound(tmp_path):
     bundle = tmp_path / "task"
     bundle.mkdir()

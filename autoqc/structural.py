@@ -22,6 +22,11 @@ def _items(bundle: Bundle) -> list[dict]:
     return bundle.rubrics if isinstance(bundle.rubrics, list) else []
 
 
+def _ann(it: dict) -> dict:
+    a = it.get("annotations")
+    return a if isinstance(a, dict) else {}
+
+
 def _s01(b: Bundle) -> CheckResult:
     n, s = "Parses as JSON array", Severity.REJECT
     if b.rubrics_error is not None:
@@ -65,7 +70,7 @@ def _s04(b: Bundle) -> CheckResult:
         m = TITLE_RE.match(str(it.get("title", "")))
         if not m:
             return _fail("S04", n, s, f"title not numbered N.x: {it.get('title')!r}")
-        num, typ = m.group(1), str(it.get("annotations", {}).get("type", ""))
+        num, typ = m.group(1), str(_ann(it).get("type", ""))
         if num == "1" and "positive" not in typ:
             return _fail("S04", n, s, f"1.x must be positive: {it.get('title')!r}")
         if num == "2" and "negative" not in typ:
@@ -76,7 +81,7 @@ def _s04(b: Bundle) -> CheckResult:
 def _s05(b: Bundle) -> CheckResult:
     n, s = "Has a positive", Severity.REJECT
     for it in _items(b):
-        if isinstance(it, dict) and "positive" in str(it.get("annotations", {}).get("type", "")):
+        if isinstance(it, dict) and "positive" in str(_ann(it).get("type", "")):
             return _ok("S05", n, s)
     return _fail("S05", n, s, "no positive (1.x) criterion present")
 
@@ -98,7 +103,7 @@ def _s07(b: Bundle) -> CheckResult:
     for it in _items(b):
         if not isinstance(it, dict):
             continue
-        ann = it.get("annotations", {})
+        ann = _ann(it)
         if ann.get("type") not in VALID_TYPES:
             return _fail("S07", n, s, f"unexpected type {ann.get('type')!r}")
         if ann.get("importance") != "must have":
