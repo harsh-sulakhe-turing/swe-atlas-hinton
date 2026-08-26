@@ -4,6 +4,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from autoqc.seed import seed_bad_negative, seed_wildcard
+from autoqc.cli import run
 
 
 @dataclass
@@ -48,3 +49,57 @@ def build_corpus(base_bundle_dir, work_dir) -> list[Case]:
         Case("q07_bad", q07, {"Q07": {q07_id}} if q07_id else {"Q07": set()}),
         Case("q03_bad", q03, {"Q03": {q03_id}} if q03_id else {"Q03": set()}),
     ]
+
+
+CHECKS = ("Q07", "Q03")
+
+
+def score_case(case, results) -> dict:
+    by = {r.id: r for r in results}
+    checks = {}
+    any_expected_fail = bool(case.expected_flags)
+    any_got_fail = False
+    for cid in CHECKS:
+        expected_fail = cid in case.expected_flags
+        got_fail = (cid in by) and (by[cid].passed is False)
+        any_got_fail = any_got_fail or got_fail
+        checks[cid] = {"expected_fail": expected_fail, "got_fail": got_fail,
+                       "correct": expected_fail == got_fail}
+    return {"name": case.name, "checks": checks,
+            "verdict_correct": any_got_fail == any_expected_fail}
+
+
+def summarize(scored) -> dict:
+    exp_total = exp_caught = clean_total = clean_failed = 0
+    for s in scored:
+        for cid, c in s["checks"].items():
+            if c["expected_fail"]:
+                exp_total += 1
+                exp_caught += 1 if c["got_fail"] else 0
+            else:
+                clean_total += 1
+                clean_failed += 1 if c["got_fail"] else 0
+    vc = sum(1 for s in scored if s["verdict_correct"])
+    return {
+        "recall": (exp_caught / exp_total) if exp_total else None,
+        "false_reject_rate": (clean_failed / clean_total) if clean_total else None,
+        "verdict_accuracy": (vc / len(scored)) if scored else None,
+        "n_cases": len(scored),
+    }
+
+
+def run_corpus(cases, client, out_root, k=3) -> list[dict]:
+    from autoqc.model import CheckResult, Stage, Severity
+    out_root = Path(out_root)
+    scored = []
+    for case in cases:
+        verdict = run(case.bundle_dir, out_root / case.name, llm=client, k=k)
+        rec = json.loads((out_root / case.name / "review_record.json").read_text())
+        results = [CheckResult(id=r["id"], name=r["name"],
+                               stage=Stage(r["stage"]), severity=Severity(r["severity"]),
+                               passed=r["passed"], needs_human=r["needs_human"])
+                   for r in rec["results"] if r["stage"] == "semantic"]
+        s = score_case(case, results)
+        s["verdict"] = verdict.value
+        scored.append(s)
+    return scored
