@@ -12,10 +12,17 @@ FIRED (passed=False) — split into:
 The internal bundles are clean ONLY w.r.t. reject checks; they legitimately
 carry Q08/Q12 warns. So the headline number is REJECT_FALSE_FIRES == 0.
 
+Bundles run concurrently over a bounded thread pool (the engine is unchanged
+and fully synchronous; the calls are I/O-bound on the gateway, so threads win
+here). Tune width with AUTOQC_CALIB_WORKERS (default 6). Per-bundle output is
+buffered and printed in submission order after all bundles finish, so the
+table never interleaves.
+
 Usage: python3 scripts/calibrate_clean.py <bundle_dir> [<bundle_dir> ...]
 """
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, ".")
@@ -37,19 +44,17 @@ if not bundles:
     print("usage: python3 scripts/calibrate_clean.py <bundle_dir> [...]", file=sys.stderr)
     raise SystemExit(64)
 
-client = GatewayLLMClient()
+client = GatewayLLMClient()  # stdlib urllib, stateless per call -> shareable across threads
 assert client.available(), ".env missing EVAL_API_KEY / EVAL_BASE_URL"
-print(f"model={client.model}  bundles={len(bundles)}  k=3  (all 11 semantic checks)\n")
+workers = min(int(os.environ.get("AUTOQC_CALIB_WORKERS", "6")), len(bundles))
+print(f"model={client.model}  bundles={len(bundles)}  k=3  workers={workers}  "
+      f"(all 11 semantic checks)\n")
 
-reject_ff = 0   # KEY danger metric: reject checks firing on a clean bundle
-warn_fires = 0  # expected / acceptable
-human_esc = 0
 
-hdr = f"{'bundle':10} {'verdict':22} {'REJECT-fires':28} {'WARN-fires':22} {'needs_human':18}"
-print(hdr)
-print("-" * len(hdr))
-
-for b in bundles:
+def score_bundle(b):
+    """Run the full check set on one bundle. Pure per-bundle work: own bundle,
+    own AgentContext, own results list — no shared mutable state, so it is safe
+    to run many of these concurrently against the shared stateless client."""
     bdir = Path(b)
     name = bdir.name[-3:]
     bundle = load_bundle(bdir)
@@ -61,22 +66,35 @@ for b in bundles:
     warns = [r.id for r in results if not r.passed and r.severity == Severity.WARN]
     humans = [r.id for r in results if r.needs_human]
 
-    reject_ff += len(rejects)
-    warn_fires += len(warns)
-    human_esc += len(humans)
-
-    print(f"{name:10} {verdict.value:22} {(','.join(rejects) or '-'):28} "
-          f"{(','.join(warns) or '-'):22} {(','.join(humans) or '-'):18}")
-
-    # surface evidence for any fire on a clean bundle so it can be triaged:
-    # reject-fires (danger) and needs_human escalations (soft false-fire).
+    fire_lines = []
     for r in results:
         if r.passed:
             continue
         if r.severity == Severity.REJECT and not r.needs_human:
-            print(f"    !! {r.id} REJECT-fired on clean {name}: {r.detail} | {r.evidence[:3]}")
+            fire_lines.append(f"    !! {r.id} REJECT-fired on clean {name}: {r.detail} | {r.evidence[:3]}")
         elif r.needs_human:
-            print(f"    ~~ {r.id} escalated (disputed) on clean {name}: {r.detail} | {r.evidence[:3]}")
+            fire_lines.append(f"    ~~ {r.id} escalated (disputed) on clean {name}: {r.detail} | {r.evidence[:3]}")
+
+    return {"name": name, "verdict": verdict, "rejects": rejects,
+            "warns": warns, "humans": humans, "fire_lines": fire_lines}
+
+
+# executor.map preserves input order, so the printed table stays in bundle order.
+with ThreadPoolExecutor(max_workers=workers) as pool:
+    scored = list(pool.map(score_bundle, bundles))
+
+reject_ff = warn_fires = human_esc = 0
+hdr = f"{'bundle':10} {'verdict':22} {'REJECT-fires':28} {'WARN-fires':22} {'needs_human':18}"
+print(hdr)
+print("-" * len(hdr))
+for s in scored:
+    reject_ff += len(s["rejects"])
+    warn_fires += len(s["warns"])
+    human_esc += len(s["humans"])
+    print(f"{s['name']:10} {s['verdict'].value:22} {(','.join(s['rejects']) or '-'):28} "
+          f"{(','.join(s['warns']) or '-'):22} {(','.join(s['humans']) or '-'):18}")
+    for line in s["fire_lines"]:
+        print(line)
 
 print("\n" + "=" * 60)
 print(f"REJECT false-fires (KEY, want 0): {reject_ff}")
