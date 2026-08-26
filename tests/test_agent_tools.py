@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from autoqc.agent.tools import (Tool, AgentContext, read_bundle_file, list_dir,
                                 SUBMIT_FINDINGS, default_tools, validate_findings, CHECK_IDS)
@@ -64,3 +63,10 @@ def test_validate_findings_flags_bad():
     ]
     valid, problems = validate_findings(bad, allowed_criterion_ids={"b" * 32})
     assert valid == [] and len(problems) == 4
+
+
+def test_read_bundle_file_non_utf8_does_not_raise(tmp_path):
+    ctx = _bundle(tmp_path)
+    (tmp_path / "task.toml").write_bytes(b"\xff\xfe\x00bad")   # task.toml is whitelisted
+    out = read_bundle_file.run({"path": "task.toml"}, ctx)     # must NOT raise
+    assert "error" in out.lower()

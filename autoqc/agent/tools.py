@@ -37,6 +37,8 @@ def _read_bundle_file(args: dict, ctx: AgentContext) -> str:
         return f"error: '{path}' not found in bundle"
     except OSError as e:
         return f"error: could not read '{path}': {e}"
+    except (UnicodeDecodeError, ValueError) as e:
+        return f"error: could not decode '{path}': {e}"
 
 
 def _list_dir(args: dict, ctx: AgentContext) -> str:
