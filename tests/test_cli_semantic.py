@@ -1,9 +1,33 @@
 import json
+import re
 import types
 from pathlib import Path
 from autoqc.cli import run
 from autoqc.llm import FakeLLMClient
 from autoqc.model import Verdict
+
+
+def _extract(messages):
+    txt = " ".join(m.get("content", "") for m in messages)
+    cm = re.search(r"check_id=(Q\d\d)", txt)
+    cid = cm.group(1) if cm else "Q07"
+    if 'criterion_id="rubric"' in txt:      # rubric-mode checks submit ONE "rubric" finding
+        ids = ["rubric"]
+    else:
+        ids = list(dict.fromkeys(re.findall(r"criterion_id=([0-9a-fA-F]{6,})", txt))) or ["rubric"]
+    return cid, ids
+
+
+def _all_pass(messages, tools):
+    cid, ids = _extract(messages)
+    return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": [
+        {"check_id": cid, "criterion_id": i, "passed": True, "evidence": ["ok"]} for i in ids]}}]}
+
+
+def _fail_q07(messages, tools):
+    cid, ids = _extract(messages)
+    return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": [
+        {"check_id": cid, "criterion_id": i, "passed": (cid != "Q07"), "evidence": ["x"]} for i in ids]}}]}
 
 
 def _bundle(root: Path, neg_title):
@@ -19,21 +43,11 @@ def _bundle(root: Path, neg_title):
     (root / "task.toml").write_text('[metadata]\nrepository="o/r"\nbase_commit="%s"\n' % ("a" * 40))
 
 
-def _submit(findings):
-    return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": findings}}]}
-
-
 def test_semantic_runs_with_client_all_pass(tmp_path):
     b = tmp_path / "task"; b.mkdir()
     _bundle(b, "2.1: Claims that X fails")
     # every criterion passes both checks
-    def responder(messages, tools):
-        import re
-        ids = re.findall(r"criterion_id=(\w+)", " ".join(m["content"] for m in messages))
-        cid = "Q07" if "Q07" in " ".join(m["content"] for m in messages) else "Q03"
-        return _submit([{"check_id": cid, "criterion_id": i, "passed": True, "evidence": ["ok"]}
-                        for i in dict.fromkeys(ids)])
-    v = run(b, tmp_path / "out", llm=FakeLLMClient(responder))
+    v = run(b, tmp_path / "out", llm=FakeLLMClient(_all_pass))
     rec = json.loads((tmp_path / "out/review_record.json").read_text())
     assert {"Q07", "Q03"} <= {r["id"] for r in rec["results"]}
     assert v is Verdict.SOUND
@@ -42,15 +56,7 @@ def test_semantic_runs_with_client_all_pass(tmp_path):
 def test_semantic_reject_makes_not_sound(tmp_path):
     b = tmp_path / "task"; b.mkdir()
     _bundle(b, "2.1: Does not claim that X fails")  # a Q07 violation
-    def responder(messages, tools):
-        import re
-        txt = " ".join(m["content"] for m in messages)
-        cid = "Q07" if "Q07" in txt else "Q03"
-        ids = list(dict.fromkeys(re.findall(r"criterion_id=(\w+)", txt)))
-        # fail the negative on Q07, pass everything else
-        return _submit([{"check_id": cid, "criterion_id": i,
-                         "passed": not (cid == "Q07"), "evidence": ["x"]} for i in ids])
-    v = run(b, tmp_path / "out", llm=FakeLLMClient(responder))
+    v = run(b, tmp_path / "out", llm=FakeLLMClient(_fail_q07))
     assert v is Verdict.NOT_SOUND
     assert "Q07" in (tmp_path / "out/report.md").read_text()
 

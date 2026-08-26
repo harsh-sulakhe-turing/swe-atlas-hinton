@@ -30,6 +30,12 @@ def _all_criteria(items):
     return [it for it in (items or []) if _is_dict_crit(it)]
 
 
+def _positives(items):
+    return [it for it in (items or [])
+            if _is_dict_crit(it) and "positive" in str(
+                it.get("annotations", {}).get("type", "") if isinstance(it.get("annotations"), dict) else "")]
+
+
 Q07 = SemanticCheck(
     id="Q07", name="Negative score-flip semantics", severity=Severity.REJECT, scope=_negatives,
     guidance=("A NEGATIVE criterion must state the FALSE assertion whose PRESENCE in an answer "
@@ -45,7 +51,29 @@ Q03 = SemanticCheck(
               "FINE and common when every listed item is an interchangeable way to satisfy the same "
               "requirement — do NOT flag interchangeable examples. passed=true means no escape hatch."))
 
-SEMANTIC_CHECKS = [Q07, Q03]
+Q01 = SemanticCheck(
+    id="Q01", name="Atomicity", severity=Severity.REJECT, scope=_all_criteria,
+    guidance=("A criterion VIOLATES this if it bundles TWO OR MORE independently gradable facts "
+              "(each could be independently true or false and separately meaningful). A cause and "
+              "its direct effect may stay together only when partial satisfaction would be "
+              "meaningless. A coherent cluster answering one sub-question is acceptable. passed=true "
+              "if the criterion tests one gradable proposition."))
+
+Q02 = SemanticCheck(
+    id="Q02", name="Binary judgeability", severity=Severity.REJECT, scope=_all_criteria,
+    guidance=("A criterion VIOLATES this if a grader cannot decide it met/not-met from an answer's "
+              "text alone: subjective quality words ('thorough', 'clearly', 'well', 'adequately', "
+              "'good'), or an undefined completeness claim. Naming specific facts/values/paths is "
+              "fine. passed=true if the criterion is objectively decidable."))
+
+Q05 = SemanticCheck(
+    id="Q05", name="No unrequested scope", severity=Severity.REJECT, scope=_positives,
+    guidance=("A POSITIVE criterion VIOLATES this if it grades a fact the prompt neither requests "
+              "nor requires as an indispensable causal link to answer it. Use the task prompt "
+              "(shown above) to judge. passed=true if the criterion is requested by the prompt or is "
+              "a necessary causal step toward the requested answer."))
+
+SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "

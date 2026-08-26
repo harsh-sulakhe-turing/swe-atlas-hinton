@@ -1,6 +1,6 @@
 import types
 from autoqc.model import Severity
-from autoqc.agent.checks import (SemanticCheck, Q07, Q03, SEMANTIC_CHECKS,
+from autoqc.agent.checks import (SemanticCheck, Q07, Q03, Q01, Q02, Q05, SEMANTIC_CHECKS,
                                  proposer_role, adversary_role,
                                  proposer_context, adversary_context)
 
@@ -20,8 +20,8 @@ def _neg(id_, title="2.1: Claims that X"):
 
 
 def test_registry_and_severities():
-    assert [c.id for c in SEMANTIC_CHECKS] == ["Q07", "Q03"]
-    assert Q07.severity is Severity.REJECT and Q03.severity is Severity.REJECT
+    assert [c.id for c in SEMANTIC_CHECKS] == ["Q07", "Q03", "Q01", "Q02", "Q05"]
+    assert all(c.severity is Severity.REJECT for c in [Q07, Q03, Q01, Q02, Q05])
 
 
 def test_q07_scope_is_negatives_only():
