@@ -73,7 +73,36 @@ Q05 = SemanticCheck(
               "(shown above) to judge. passed=true if the criterion is requested by the prompt or is "
               "a necessary causal step toward the requested answer."))
 
-SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05]
+Q04 = SemanticCheck(
+    id="Q04", name="Prompt coverage", severity=Severity.REJECT, scope=_all_criteria, unit_mode="rubric",
+    guidance=("The rubric VIOLATES this if any explicit obligation in the task prompt has NO positive "
+              "criterion grading it (especially a central runtime result buried or absent). passed=true "
+              "if every prompt obligation maps to at least one positive criterion. Evidence: name any "
+              "uncovered obligation."))
+
+Q08 = SemanticCheck(
+    id="Q08", name="Discriminating negatives", severity=Severity.WARN, scope=_all_criteria, unit_mode="rubric",
+    guidance=("Grading is all-or-nothing: a negative adds power only if NO positive already forces the "
+              "correct version of the same fact. The rubric VIOLATES this (warn) if its negatives are "
+              "mostly REDUNDANT inverses of positives. passed=true if at least one negative is "
+              "discriminating — it catches a plausible wrong answer that no positive already forces. "
+              "Evidence: cite a redundant negative, or the discriminating one."))
+
+Q10 = SemanticCheck(
+    id="Q10", name="Empirical result graded", severity=Severity.WARN, scope=_all_criteria, unit_mode="rubric",
+    guidance=("If the task prompt requires running the software, the rubric VIOLATES this (warn) if NO "
+              "positive grades the SPECIFIC observed result (a value, comparison, state transition, "
+              "generated artifact, or error). A criterion that merely says the answer 'ran' or "
+              "'reported empirical evidence' is insufficient. passed=true if a specific empirical "
+              "result is graded, OR the prompt does not require running anything."))
+
+Q11 = SemanticCheck(
+    id="Q11", name="Not lookup-dominated", severity=Severity.WARN, scope=_all_criteria, unit_mode="rubric",
+    guidance=("The rubric VIOLATES this (warn) if it is mostly trivia lookups (ports, constants, default "
+              "values, file lists, single line numbers) with little causal or synthesis content. "
+              "passed=true if the criteria as a whole require meaningful reasoning, not just lookups."))
+
+SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "

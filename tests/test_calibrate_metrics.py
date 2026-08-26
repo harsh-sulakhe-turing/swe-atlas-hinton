@@ -77,3 +77,8 @@ def test_run_corpus_reads_records_and_scores(tmp_path):
     scored = run_corpus([case], FakeLLMClient(responder), tmp_path / "out", k=1)
     assert scored[0]["checks"]["Q07"]["got_fail"] is True
     assert scored[0]["checks"]["Q07"]["correct"] is True
+
+
+def test_checks_covers_full_set():
+    from autoqc.calibrate import CHECKS
+    assert set(CHECKS) >= {"Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q09", "Q10", "Q11", "Q12"}

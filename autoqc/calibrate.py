@@ -56,7 +56,7 @@ def build_corpus(base_bundle_dir, work_dir) -> list[Case]:
     ]
 
 
-CHECKS = ("Q07", "Q03")
+CHECKS = ("Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q09", "Q10", "Q11", "Q12")
 
 
 def score_case(case, results) -> dict:
