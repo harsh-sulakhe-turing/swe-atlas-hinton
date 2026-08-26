@@ -57,7 +57,7 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
     if not criteria:
         return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
                            severity=check.severity, passed=True)
-    allowed = {c["id"] for c in criteria}
+    allowed = {"rubric"} if getattr(check, "unit_mode", "criterion") == "rubric" else {c["id"] for c in criteria}
 
     finding_sets = []
     p_ctx = proposer_context(bundle, check, criteria)

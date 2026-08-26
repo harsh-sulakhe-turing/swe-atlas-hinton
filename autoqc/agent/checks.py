@@ -13,6 +13,7 @@ class SemanticCheck:
     severity: Severity
     scope: Callable          # (items) -> list[dict]
     guidance: str
+    unit_mode: str = "criterion"
 
 
 def _is_dict_crit(it):
@@ -71,7 +72,25 @@ def _criteria_block(criteria) -> str:
     return "\n".join(f"- criterion_id={c['id']}  title={c.get('title','')!r}" for c in criteria)
 
 
+def _full_rubric_block(bundle) -> str:
+    items = bundle.rubrics if isinstance(getattr(bundle, "rubrics", None), list) else []
+    lines = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        typ = "neg" if "negative" in str(it.get("annotations", {}).get("type", "")) else "pos"
+        lines.append(f"- [{typ}] criterion_id={it.get('id')}  title={it.get('title', '')!r}")
+    return "\n".join(lines)
+
+
 def proposer_context(bundle, check, criteria) -> str:
+    if check.unit_mode == "rubric":
+        return (f"Task prompt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+                f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
+                f"The full rubric:\n{_full_rubric_block(bundle)}\n\n"
+                "Judge the rubric AS A WHOLE for this check. Submit EXACTLY ONE finding with "
+                f"check_id={check.id} and criterion_id=\"rubric\": passed=true if the rubric "
+                "SATISFIES the check, passed=false if it VIOLATES it; evidence must justify it.")
     return (f"Task prompt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
             f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
             f"Judge each of these criteria (submit one finding per criterion, check_id={check.id}):\n"
@@ -80,6 +99,13 @@ def proposer_context(bundle, check, criteria) -> str:
 
 
 def adversary_context(bundle, check, criteria, agg) -> str:
+    if check.unit_mode == "rubric":
+        v = agg.get("rubric", {})
+        verdict = "PASS" if v.get("passed") else "FAIL (reject)"
+        return (f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
+                f"The full rubric:\n{_full_rubric_block(bundle)}\n\n"
+                f"A prior review judged the whole rubric: {verdict}. Challenge that per the rules "
+                f"above, then submit EXACTLY ONE finding (check_id={check.id}, criterion_id=\"rubric\").")
     lines = []
     for c in criteria:
         v = agg.get(c["id"], {})
