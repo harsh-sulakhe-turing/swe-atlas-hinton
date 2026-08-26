@@ -68,10 +68,15 @@ for b in bundles:
     print(f"{name:10} {verdict.value:22} {(','.join(rejects) or '-'):28} "
           f"{(','.join(warns) or '-'):22} {(','.join(humans) or '-'):18}")
 
-    # surface evidence for any reject false-fire so it can be triaged immediately
+    # surface evidence for any fire on a clean bundle so it can be triaged:
+    # reject-fires (danger) and needs_human escalations (soft false-fire).
     for r in results:
-        if not r.passed and r.severity == Severity.REJECT and not r.needs_human:
-            print(f"    !! {r.id} REJECT-fired on clean {name}: {r.detail} | {r.evidence[:2]}")
+        if r.passed:
+            continue
+        if r.severity == Severity.REJECT and not r.needs_human:
+            print(f"    !! {r.id} REJECT-fired on clean {name}: {r.detail} | {r.evidence[:3]}")
+        elif r.needs_human:
+            print(f"    ~~ {r.id} escalated (disputed) on clean {name}: {r.detail} | {r.evidence[:3]}")
 
 print("\n" + "=" * 60)
 print(f"REJECT false-fires (KEY, want 0): {reject_ff}")
