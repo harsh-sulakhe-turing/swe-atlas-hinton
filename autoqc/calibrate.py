@@ -44,10 +44,15 @@ def build_corpus(base_bundle_dir, work_dir) -> list[Case]:
     q03 = _copy_bundle(base, work / "q03_bad")
     q03_id = _seed_into(q03, seed_wildcard)
 
+    if q07_id is None or q03_id is None:
+        raise ValueError(
+            "build_corpus needs a base bundle with at least one negative AND one "
+            f"positive criterion to seed (q07_id={q07_id}, q03_id={q03_id})")
+
     return [
         Case("clean", clean, {}),
-        Case("q07_bad", q07, {"Q07": {q07_id}} if q07_id else {"Q07": set()}),
-        Case("q03_bad", q03, {"Q03": {q03_id}} if q03_id else {"Q03": set()}),
+        Case("q07_bad", q07, {"Q07": {q07_id}}),
+        Case("q03_bad", q03, {"Q03": {q03_id}}),
     ]
 
 
@@ -83,7 +88,7 @@ def summarize(scored) -> dict:
     return {
         "recall": (exp_caught / exp_total) if exp_total else None,
         "false_reject_rate": (clean_failed / clean_total) if clean_total else None,
-        "verdict_accuracy": (vc / len(scored)) if scored else None,
+        "detection_accuracy": (vc / len(scored)) if scored else None,
         "n_cases": len(scored),
     }
 

@@ -50,7 +50,7 @@ def test_summarize_metrics():
     m = summarize(scored)
     assert m["recall"] == 1.0            # 1 expected-fail, caught
     assert m["false_reject_rate"] == 1 / 3  # 3 clean checks, 1 wrongly failed
-    assert m["verdict_accuracy"] == 0.5
+    assert m["detection_accuracy"] == 0.5
 
 
 def test_run_corpus_reads_records_and_scores(tmp_path):

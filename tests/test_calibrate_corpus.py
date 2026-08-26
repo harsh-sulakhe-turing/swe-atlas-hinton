@@ -38,3 +38,17 @@ def test_build_corpus_writes_three_labeled_variants(tmp_path):
     # q03_bad has the wildcard + labels Q03
     assert "or similar" in (by["q03_bad"].bundle_dir / "tests/rubrics.json").read_text()
     assert set(by["q03_bad"].expected_flags) == {"Q03"}
+
+
+def test_build_corpus_raises_without_both_criterion_types(tmp_path):
+    import json, pytest
+    base = tmp_path / "base"; (base / "tests").mkdir(parents=True)
+    (base / "tests/rubrics.json").write_text(json.dumps([
+        {"id": "p" * 32, "title": "1.1: States the port",
+         "annotations": {"type": "positive hli verifier", "importance": "must have"}}]))  # no negative
+    (base / "tests/prompt.txt").write_text("q")
+    (base / "solution").mkdir(); (base / "solution/answer.txt").write_text("a")
+    (base / "environment").mkdir(); (base / "environment/Dockerfile").write_text("FROM x")
+    (base / "task.toml").write_text('[metadata]\nrepository="o/r"\nbase_commit="%s"\n' % ("a" * 40))
+    with pytest.raises(ValueError):
+        build_corpus(base, tmp_path / "work")
