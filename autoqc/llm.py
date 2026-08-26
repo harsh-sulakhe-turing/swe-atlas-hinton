@@ -68,7 +68,11 @@ class GatewayLLMClient(LLMClient):
         return bool(self.api_key and self.base_url)
 
     def chat(self, messages, tools=None) -> ChatResponse:
-        payload = {"model": self.model, "messages": messages, "max_tokens": 1024}
+        # Generous default: a submit_findings call over a whole rubric emits many
+        # findings, and reasoning models spend output tokens on reasoning too. 1024
+        # truncated multi-finding submissions in the first live smoke. Env-tunable.
+        max_tokens = int(os.environ.get("EVAL_MAX_TOKENS", "8192"))
+        payload = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
         if tools:
             payload["tools"] = tools
         req = urllib.request.Request(
