@@ -41,6 +41,14 @@ def test_aggregate_collects_evidence():
     assert "ev1" in agg["a"]["evidence"] and "ev2" in agg["a"]["evidence"]
 
 
+def test_aggregate_dedupes_votes_per_pass():
+    # one pass emits the same criterion 3x (all True); two passes abstain
+    sets = [[_f("a", True), _f("a", True), _f("a", True)], [], []]
+    agg = aggregate(sets, {"a"})
+    assert agg["a"]["passed"] is True     # the one real vote is True
+    assert agg["a"]["split"] is True      # but only 1 of 3 passes voted -> split, NOT false-unanimous
+
+
 def test_adjudicate_clean_pass():
     agg = {"a": {"passed": True, "split": False, "evidence": []}}
     adj = adjudicate(agg, adversary_findings=[])

@@ -10,13 +10,22 @@ from autoqc.agent.tools import validate_findings
 def aggregate(finding_sets, allowed_ids):
     out = {}
     n = len(finding_sets)
+    # collapse each pass to at most one verdict per criterion (first occurrence)
+    per_pass = []
+    for fs in finding_sets:
+        seen = {}
+        for f in fs:
+            cid = f.get("criterion_id")
+            if cid in allowed_ids and cid not in seen:
+                seen[cid] = (bool(f.get("passed")), list(f.get("evidence") or []))
+        per_pass.append(seen)
     for cid in allowed_ids:
         votes, evidence = [], []
-        for fs in finding_sets:
-            for f in fs:
-                if f.get("criterion_id") == cid:
-                    votes.append(bool(f.get("passed")))
-                    evidence.extend(f.get("evidence") or [])
+        for seen in per_pass:
+            if cid in seen:
+                p, ev = seen[cid]
+                votes.append(p)
+                evidence.extend(ev)
         if not votes:
             out[cid] = {"passed": False, "split": True, "evidence": evidence}
             continue
