@@ -64,3 +64,18 @@ def test_no_tool_calls_gets_nudged_then_submits(tmp_path):
         return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": []}}]}
     res = run_agent(_role(), "context", FakeLLMClient(responder), _ctx(tmp_path))
     assert res.ok is True and calls["n"] == 2
+
+
+def test_raising_tool_degrades_not_crash(tmp_path):
+    from autoqc.agent.tools import Tool, default_tools
+    def boom(args, ctx): raise RuntimeError("kaboom")
+    bad = Tool(name="bad", description="", parameters={"type":"object","properties":{}}, run=boom)
+    role = Role(name="proposer", system_prompt="x", tools=default_tools() + [bad])
+    calls = {"n": 0}
+    def responder(messages, tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"tool_calls": [{"id": "b", "name": "bad", "args": {}}]}
+        return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": []}}]}
+    res = run_agent(role, "ctx", FakeLLMClient(responder), _ctx(tmp_path))
+    assert res.ok is True  # survived the raising tool

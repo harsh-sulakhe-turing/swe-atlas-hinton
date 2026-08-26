@@ -43,7 +43,10 @@ def _read_bundle_file(args: dict, ctx: AgentContext) -> str:
 
 def _list_dir(args: dict, ctx: AgentContext) -> str:
     rel = str(args.get("path", "."))
-    p = Path(ctx.bundle_dir) / rel
+    root = Path(ctx.bundle_dir).resolve()
+    p = (root / rel).resolve()
+    if p != root and root not in p.parents:
+        return f"error: '{rel}' is outside the bundle"
     try:
         return "\n".join(sorted(x.name for x in p.iterdir()))
     except OSError as e:
@@ -72,7 +75,7 @@ SUBMIT_FINDINGS = Tool(
             "check_id": {"type": "string", "enum": sorted(CHECK_IDS)},
             "criterion_id": {"type": "string"},
             "passed": {"type": "boolean"},
-            "evidence": {"type": "array", "items": {"type": "string"}},
+            "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
             "reason": {"type": "string"}}}}}, "required": ["findings"]},
     run=None, terminal=True)
 
@@ -96,7 +99,7 @@ def validate_findings(findings, allowed_criterion_ids: set[str]):
         if not isinstance(f.get("passed"), bool):
             problems.append(f"finding {i}: passed not a bool"); continue
         ev = f.get("evidence")
-        if not (isinstance(ev, list) and len(ev) > 0):
-            problems.append(f"finding {i}: empty/invalid evidence"); continue
+        if not (isinstance(ev, list) and ev and all(isinstance(x, str) and x.strip() for x in ev)):
+            problems.append(f"finding {i}: evidence must be a non-empty list of non-empty strings"); continue
         valid.append(f)
     return valid, problems

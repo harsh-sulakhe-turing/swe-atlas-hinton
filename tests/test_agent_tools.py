@@ -70,3 +70,18 @@ def test_read_bundle_file_non_utf8_does_not_raise(tmp_path):
     (tmp_path / "task.toml").write_bytes(b"\xff\xfe\x00bad")   # task.toml is whitelisted
     out = read_bundle_file.run({"path": "task.toml"}, ctx)     # must NOT raise
     assert "error" in out.lower()
+
+
+def test_list_dir_rejects_outside_bundle(tmp_path):
+    ctx = _bundle(tmp_path)
+    out = list_dir.run({"path": "../.."}, ctx)
+    assert "outside the bundle" in out.lower()
+
+
+def test_validate_findings_rejects_empty_or_nonstring_evidence():
+    bad = [
+        {"check_id":"Q07","criterion_id":"rubric","passed":True,"evidence":[""]},
+        {"check_id":"Q07","criterion_id":"rubric","passed":True,"evidence":[123]},
+    ]
+    valid, problems = validate_findings(bad, allowed_criterion_ids=set())
+    assert valid == [] and len(problems) == 2

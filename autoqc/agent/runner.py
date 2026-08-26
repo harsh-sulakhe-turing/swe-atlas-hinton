@@ -47,6 +47,9 @@ def run_agent(role: Role, context_text: str, client, ctx, max_turns: int = 12) -
                 findings = call.args.get("findings", []) if isinstance(call.args, dict) else []
                 return AgentResult(findings=findings, ok=True)
             tool = by_name.get(call.name)
-            out = tool.run(call.args, ctx) if (tool and tool.run) else f"error: unknown tool {call.name!r}"
+            try:
+                out = tool.run(call.args, ctx) if (tool and tool.run) else f"error: unknown tool {call.name!r}"
+            except Exception as e:
+                out = f"error: tool {call.name!r} failed: {e}"
             messages.append({"role": "tool", "tool_call_id": call.id, "content": out})
     return AgentResult(ok=False, reason=f"exceeded max_turns ({max_turns}) without submit_findings")
