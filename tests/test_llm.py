@@ -1,16 +1,11 @@
+# tests/test_llm.py
 import pytest
-from autoqc.llm import LLMClient, FakeLLMClient, GatewayLLMClient, default_client
-
-
-def test_fake_client_returns_responder_output():
-    fake = FakeLLMClient(lambda messages: {"passed": True, "seen": len(messages)})
-    out = fake.judge([{"role": "user", "content": "hi"}])
-    assert out == {"passed": True, "seen": 1}
+from autoqc.llm import LLMClient, GatewayLLMClient, default_client
 
 
 def test_base_client_is_abstract():
     with pytest.raises(NotImplementedError):
-        LLMClient().judge([])
+        LLMClient().chat([])
 
 
 def test_gateway_available_reflects_env(monkeypatch):
@@ -23,10 +18,8 @@ def test_gateway_available_reflects_env(monkeypatch):
     monkeypatch.setenv("EVAL_API_KEY", "k")
     monkeypatch.setenv("EVAL_BASE_URL", "http://gw")
     assert GatewayLLMClient().available() is True
-    dc = default_client()
-    assert isinstance(dc, GatewayLLMClient) and dc.model  # default model set
+    assert isinstance(default_client(), GatewayLLMClient)
 
 
 def test_gateway_default_model():
-    g = GatewayLLMClient(api_key="k", base_url="http://gw")
-    assert g.model == "anthropic/claude-opus-4-5-20251101"
+    assert GatewayLLMClient(api_key="k", base_url="http://gw").model == "z-ai/glm-5.2"
