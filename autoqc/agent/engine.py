@@ -5,6 +5,7 @@ from autoqc.agent.runner import run_agent
 from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
                                  proposer_context, adversary_context)
 from autoqc.agent.tools import validate_findings
+from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
 
 
 def aggregate(finding_sets, allowed_ids):
@@ -87,4 +88,6 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
 
 
 def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None):
-    return [run_check(c, bundle, client, ctx, k=k, votes_log=votes_log) for c in checks]
+    results = [run_check(c, bundle, client, ctx, k=k, votes_log=votes_log) for c in checks]
+    results += [fn(bundle) for fn in DETERMINISTIC_CHECKS]
+    return results
