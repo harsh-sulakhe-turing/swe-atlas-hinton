@@ -135,7 +135,9 @@ def _full_rubric_block(bundle) -> str:
     for it in items:
         if not isinstance(it, dict):
             continue
-        typ = "neg" if "negative" in str(it.get("annotations", {}).get("type", "")) else "pos"
+        ann = it.get("annotations")
+        typ = "neg" if "negative" in str(
+            ann.get("type", "") if isinstance(ann, dict) else "") else "pos"
         lines.append(f"- [{typ}] criterion_id={it.get('id')}  title={it.get('title', '')!r}")
     return "\n".join(lines)
 

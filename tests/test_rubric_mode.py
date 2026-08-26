@@ -1,7 +1,8 @@
 import types
 from pathlib import Path
+import pytest
 from autoqc.model import Severity, Stage
-from autoqc.agent.checks import SemanticCheck, proposer_context, adversary_context
+from autoqc.agent.checks import SemanticCheck, proposer_context, adversary_context, _full_rubric_block
 from autoqc.agent.engine import run_check
 from autoqc.agent.tools import AgentContext
 from autoqc.llm import FakeLLMClient
@@ -49,6 +50,18 @@ def test_run_check_rubric_mode_fail(tmp_path):
             {"check_id": "Q04", "criterion_id": "rubric", "passed": False, "evidence": ["obligation Y uncovered"]}]}}]}
     r = run_check(RUBRIC_CHECK, b, FakeLLMClient(responder), _ctx(tmp_path), k=3)
     assert r.passed is False and "rubric" in r.detail
+
+
+@pytest.mark.parametrize("bad_ann", [None, [], "negative", 42])
+def test_full_rubric_block_never_raises_on_nondict_annotations(bad_ann):
+    # never-raise: a criterion with annotations that isn't a dict must not crash
+    # the whole-rubric context builder (the per-rubric checks Q04/Q08/Q10/Q11 path).
+    items = [{"id": "a" * 32, "title": "1.1: States X", "annotations": bad_ann}]
+    b = types.SimpleNamespace(rubrics=items, prompt="How does X work?")
+    block = _full_rubric_block(b)  # must not raise
+    assert "criterion_id=" in block
+    # a non-dict annotation can never be read as negative -> defaults to pos
+    assert "[pos]" in block
 
 
 def test_run_check_rubric_mode_empty_scope_passes(tmp_path):
