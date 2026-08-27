@@ -71,6 +71,11 @@ def test_q06_is_reject_percriterion():
     assert Q06.unit_mode == "criterion"
 
 
+def test_q06_not_in_semantic_checks():
+    from autoqc.agent.checks import SEMANTIC_CHECKS
+    assert Q06 not in SEMANTIC_CHECKS
+
+
 def test_factual_role_has_run_bash():
     names = {t.name for t in factual_role().tools}
     assert "run_bash" in names and "submit_findings" in names
@@ -84,3 +89,4 @@ def test_factual_context_mentions_base_commit_and_criteria():
     crit = [{"id": "1.1", "title": "States the default retry count is 3"}]
     ctx = factual_context(B(), crit)
     assert "eea1d62f" in ctx and "1.1" in ctx and "/testbed" in ctx
+    assert "cosi-project/runtime" in ctx
