@@ -14,6 +14,13 @@ from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
 from autoqc.agent.container import ContainerSession, docker_available, ContainerError
 
 
+def _engine_workers(default: int = 8) -> int:
+    try:
+        return int(os.environ.get("AUTOQC_ENGINE_WORKERS", str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def aggregate(finding_sets, allowed_ids):
     out = {}
     n = len(finding_sets)
@@ -122,7 +129,7 @@ def run_checks_parallel(checks, bundle, client, ctx, k, votes_log=None) -> list:
     submitted up front; each check's adversary is launched when its k proposers
     finish. Verdicts are identical to serial run_check (aggregate is order-free).
     Bookkeeping runs only on this (main) thread; pool workers are pure passes."""
-    w = int(os.environ.get("AUTOQC_ENGINE_WORKERS", "8"))
+    w = _engine_workers()
     preps, results_by_id = {}, {}
     for check in checks:
         criteria, allowed = _check_prep(check, bundle)

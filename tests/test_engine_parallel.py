@@ -1,3 +1,4 @@
+import re
 import types
 from pathlib import Path
 from autoqc.agent import engine as engine_module
@@ -115,3 +116,63 @@ def test_run_semantic_parallel_still_returns_all_checks(tmp_path):
     results = run_semantic(b, FakeLLMClient(_submit_all_pass), _ctx(tmp_path), k=1, factual=False)
     ids = {r.id for r in results}
     assert {"Q07", "Q03", "Q09", "Q12"} <= ids
+
+
+def test_engine_workers_bad_env_falls_back(monkeypatch):
+    from autoqc.agent.engine import _engine_workers
+    monkeypatch.setenv("AUTOQC_ENGINE_WORKERS", "not-a-number")
+    assert _engine_workers() == 8
+    monkeypatch.setenv("AUTOQC_ENGINE_WORKERS", "4")
+    assert _engine_workers() == 4
+
+
+def test_run_checks_parallel_survives_bad_workers_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOQC_ENGINE_WORKERS", "garbage")
+    b = _bundle()
+    results = run_checks_parallel(SEMANTIC_CHECKS, b, FakeLLMClient(_submit_all_pass),
+                                  _ctx(tmp_path), k=3)
+    assert len(results) == len(SEMANTIC_CHECKS)  # no crash despite unparseable env value
+
+
+def _is_adversary(messages):
+    return "adversarial" in messages[0]["content"].lower()
+
+
+_Q07_REJECT_ID = "b" * 32  # negative criterion from _bundle(), scoped by Q07
+
+
+def _submit_mixed(messages, tools):
+    # Everything passes, EXCEPT Q07's negative criterion: proposers reject it,
+    # and the adversary defends it (passed=True) -> overturn -> needs_human,
+    # while the aggregate verdict (reject) stands. This makes the compared
+    # verdict maps non-uniform (a reject + a needs_human), unlike the
+    # all-pass responder used elsewhere in this file.
+    user = next(m["content"] for m in messages if m["role"] == "user")
+    cm = re.search(r"Check (Q\d\d)", user)
+    check_id = cm.group(1) if cm else "Q07"
+    if 'criterion_id="rubric"' in user:
+        ids = ["rubric"]
+    else:
+        ids = list(dict.fromkeys(re.findall(r"criterion_id=([0-9a-fA-F]{6,})", user))) or ["rubric"]
+    is_adv = _is_adversary(messages)
+    findings = []
+    for i in ids:
+        if check_id == "Q07" and i == _Q07_REJECT_ID:
+            passed = True if is_adv else False
+        else:
+            passed = True
+        findings.append({"check_id": check_id, "criterion_id": i, "passed": passed, "evidence": ["ok"]})
+    return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {"findings": findings}}]}
+
+
+def test_parallel_equals_serial_mixed_verdicts(tmp_path):
+    b = _bundle()
+    client = FakeLLMClient(_submit_mixed)  # shared: responder is a pure function of messages
+    serial = [run_check(c, b, client, _ctx(tmp_path), k=3) for c in SEMANTIC_CHECKS]
+    parallel = run_checks_parallel(SEMANTIC_CHECKS, b, client, _ctx(tmp_path), k=3)
+    assert _verdicts(parallel) == _verdicts(serial)
+    # sanity: the verdict map is genuinely non-uniform, so this test actually
+    # exercises a scheduler that must agree with serial beyond "all pass".
+    verdicts = _verdicts(parallel)
+    assert any(nh for (_p, nh) in verdicts.values())
+    assert any(not p for (p, _nh) in verdicts.values())
