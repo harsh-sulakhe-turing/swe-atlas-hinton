@@ -67,6 +67,20 @@ def _own(findings, check_id, allowed_ids):
 TEXT_MAX_TURNS = 3
 
 
+def _factual_max_turns(default: int = 40) -> int:
+    try:
+        return int(os.environ.get("AUTOQC_FACTUAL_MAX_TURNS", str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# The container agent is exploratory (reads source + runs repros across many
+# turns before it can submit), so it needs a far larger turn budget than the
+# single-turn text checks. The default 12 (inherited by omission) starved it and
+# degraded real verifications to needs_human. Env-overridable for calibration.
+FACTUAL_MAX_TURNS = _factual_max_turns()
+
+
 def _empty_scope_result(check) -> CheckResult:
     return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
                        severity=check.severity, passed=True)
@@ -272,7 +286,7 @@ def run_factual(bundle, client, ctx, votes_log=None) -> CheckResult:
     p_ctx = factual_context(bundle, criteria)
     rounds = []
     for _ in range(2):
-        res = run_agent(factual_role(), p_ctx, client, ctx)
+        res = run_agent(factual_role(), p_ctx, client, ctx, max_turns=FACTUAL_MAX_TURNS)
         if votes_log is not None:
             votes_log.append({"check": "Q06", "role": "factual",
                               "ok": res.ok, "findings": res.findings})
