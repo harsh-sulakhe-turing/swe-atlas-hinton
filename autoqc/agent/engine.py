@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from autoqc.model import CheckResult, Stage, Severity
 from autoqc.agent.runner import run_agent
 from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
@@ -95,15 +97,21 @@ def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=Non
 
 
 def _files(evidence) -> set[str]:
-    """Path prefixes cited in evidence: the token before ':' (or the first
-    slash-bearing whitespace token). Used to require same-file agreement."""
+    """Path prefixes cited in evidence. Scans the whole string for a
+    path:line-shaped token (evidence only has to CONTAIN one, not start
+    with one); falls back to the pre-':' first token if none is found.
+    Used to require same-file agreement."""
     out = set()
     for e in evidence or []:
         s = str(e).strip()
         if not s:
             continue
-        head = s.split()[0]
-        out.add(head.split(":", 1)[0])
+        m = re.search(r'([^\s:]+):\d+', s)
+        if m:
+            out.add(m.group(1))
+        else:
+            head = s.split()[0]
+            out.add(head.split(":", 1)[0])
     return out
 
 
@@ -117,7 +125,7 @@ def _round_map(findings, allowed_ids):
     return m
 
 
-def adjudicate_factual(r1_findings, r2_findings, allowed_ids) -> dict:
+def adjudicate_factual(r1_findings, r2_findings, allowed_ids) -> dict[str, dict]:
     m1 = _round_map(r1_findings, allowed_ids)
     m2 = _round_map(r2_findings, allowed_ids)
     out = {}

@@ -34,6 +34,24 @@ def test_adjudicate_missing_round_needs_human():
     assert a["1"]["needs_human"] is True
 
 
+def test_adjudicate_agree_reject_prose_evidence_same_file_is_hard_reject():
+    a = adjudicate_factual(
+        [_f("1", False, ["The bug is in pkg/foo.go:42 per the constant"])],
+        [_f("1", False, ["see pkg/foo.go:9 also"])],
+        {"1"},
+    )
+    assert a["1"] == {"passed": False, "needs_human": False}
+
+
+def test_adjudicate_agree_reject_prose_evidence_different_files_needs_human():
+    a = adjudicate_factual(
+        [_f("1", False, ["The bug is in pkg/foo.go:42 per the constant"])],
+        [_f("1", False, ["see pkg/bar.go:9 also"])],
+        {"1"},
+    )
+    assert a["1"]["needs_human"] is True
+
+
 def _bundle_with(criteria):
     class B:
         prompt = "p"; base_commit = "abc"; repository = "r"
@@ -71,3 +89,11 @@ def test_run_factual_no_criteria_passes(tmp_path):
     ctx = AgentContext(bundle_dir=tmp_path, container=None)
     res = run_factual(_bundle_with([]), FakeLLMClient(_responder_all(True, ["x:1"])), ctx)
     assert res.passed is True and res.needs_human is False
+
+
+def test_run_factual_votes_log_records_both_rounds(tmp_path):
+    ctx = AgentContext(bundle_dir=tmp_path, container=None)
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    log = []
+    run_factual(b, FakeLLMClient(_responder_all(True, ["x.go:3"])), ctx, votes_log=log)
+    assert len([e for e in log if e["role"] == "factual"]) == 2
