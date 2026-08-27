@@ -108,7 +108,7 @@ def _run_bash(args: dict, ctx: AgentContext) -> str:
     reason = guard_command(cmd)
     if reason:
         return reason
-    container = getattr(ctx, "container", None)
+    container = ctx.container
     if container is None:
         return "error: no container available for run_bash"
     try:

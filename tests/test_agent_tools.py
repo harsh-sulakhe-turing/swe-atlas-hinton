@@ -126,3 +126,10 @@ def test_run_bash_without_container_is_error_not_crash():
 def test_factual_tools_includes_run_bash_and_submit():
     names = {t.name for t in factual_tools()}
     assert {"run_bash", "submit_findings", "read_bundle_file"} <= names
+
+
+def test_run_bash_wraps_container_exception():
+    class Boom:
+        def exec(self, cmd, cwd="/testbed", timeout=None): raise RuntimeError("kaboom")
+    out = run_bash.run({"cmd": "cat go.mod"}, AgentContext(bundle_dir=".", container=Boom()))
+    assert out.startswith("error:") and "kaboom" in out
