@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 
 from autoqc.model import CheckResult, Stage, Severity
@@ -55,30 +56,37 @@ def _own(findings, check_id, allowed_ids):
     return [f for f in valid if f.get("check_id") == check_id]
 
 
-def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
+TEXT_MAX_TURNS = 3
+
+
+def _empty_scope_result(check) -> CheckResult:
+    return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
+                       severity=check.severity, passed=True)
+
+
+def _check_prep(check, bundle):
     items = bundle.rubrics if isinstance(getattr(bundle, "rubrics", None), list) else []
     criteria = check.scope(items)
-    if not criteria:
-        return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
-                           severity=check.severity, passed=True)
-    allowed = {"rubric"} if getattr(check, "unit_mode", "criterion") == "rubric" else {c["id"] for c in criteria}
+    allowed = ({"rubric"} if getattr(check, "unit_mode", "criterion") == "rubric"
+               else {c["id"] for c in criteria})
+    return criteria, allowed
 
-    finding_sets = []
-    p_ctx = proposer_context(bundle, check, criteria)
-    for _ in range(k):
-        res = run_agent(proposer_role(), p_ctx, client, ctx)
-        if votes_log is not None:
-            votes_log.append({"check": check.id, "role": "proposer",
-                              "ok": res.ok, "findings": res.findings})
-        finding_sets.append(_own(res.findings, check.id, allowed) if res.ok else [])
 
-    agg = aggregate(finding_sets, allowed)
-    adv_res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg), client, ctx)
-    if votes_log is not None:
-        votes_log.append({"check": check.id, "role": "adversary",
-                          "ok": adv_res.ok, "findings": adv_res.findings})
-    adv_findings = _own(adv_res.findings, check.id, allowed) if adv_res.ok else []
+def proposer_pass(check, bundle, client, ctx, criteria, allowed):
+    res = run_agent(proposer_role(), proposer_context(bundle, check, criteria),
+                    client, ctx, max_turns=TEXT_MAX_TURNS)
+    log = {"check": check.id, "role": "proposer", "ok": res.ok, "findings": res.findings}
+    return (_own(res.findings, check.id, allowed) if res.ok else []), log
 
+
+def adversary_pass(check, bundle, client, ctx, criteria, allowed, agg):
+    res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg),
+                    client, ctx, max_turns=TEXT_MAX_TURNS)
+    log = {"check": check.id, "role": "adversary", "ok": res.ok, "findings": res.findings}
+    return (_own(res.findings, check.id, allowed) if res.ok else []), log
+
+
+def finalize_check(check, agg, adv_findings) -> CheckResult:
     adj = adjudicate(agg, adv_findings)
     passed = all(v["passed"] for v in adj.values()) if adj else True
     needs_human = any(v["needs_human"] for v in adj.values())
@@ -89,6 +97,23 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
     detail = "" if passed and not needs_human else "criteria needing attention: " + ", ".join(problem_ids)
     return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC, severity=check.severity,
                        passed=passed, needs_human=needs_human, evidence=evidence[:20], detail=detail)
+
+
+def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
+    criteria, allowed = _check_prep(check, bundle)
+    if not criteria:
+        return _empty_scope_result(check)
+    finding_sets = []
+    for _ in range(k):
+        own, log = proposer_pass(check, bundle, client, ctx, criteria, allowed)
+        if votes_log is not None:
+            votes_log.append(log)
+        finding_sets.append(own)
+    agg = aggregate(finding_sets, allowed)
+    adv_own, adv_log = adversary_pass(check, bundle, client, ctx, criteria, allowed, agg)
+    if votes_log is not None:
+        votes_log.append(adv_log)
+    return finalize_check(check, agg, adv_own)
 
 
 def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None, factual=True):
