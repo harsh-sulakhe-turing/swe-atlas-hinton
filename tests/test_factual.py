@@ -1,5 +1,7 @@
 from pathlib import Path
+from autoqc.agent import engine as engine_mod
 from autoqc.agent.engine import adjudicate_factual, run_factual, run_factual_stage, run_semantic
+from autoqc.agent.container import ContainerError
 from autoqc.agent.tools import AgentContext
 from autoqc.llm import FakeLLMClient
 from autoqc.model import Stage, Severity
@@ -117,3 +119,80 @@ def test_run_semantic_skips_factual_when_disabled(tmp_path):
     results = run_semantic(b, FakeLLMClient(_responder_all(True, ["x:1"])), ctx,
                            checks=[], k=1, factual=False)
     assert not any(r.id == "Q06" for r in results)
+
+
+def test_stage_needs_human_when_no_dockerfile_in_bundle(tmp_path):
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    b.root = tmp_path
+    b.files_present = {"environment/Dockerfile": False}
+    # docker=True proves the stage short-circuits on the missing-Dockerfile check
+    # rather than ever reaching the Docker gate.
+    res = run_factual_stage(b, FakeLLMClient(_responder_all(True, ["x:1"])),
+                            docker=lambda runner=None: True)
+    assert res.id == "Q06" and res.needs_human is True and res.passed is False
+    assert "dockerfile" in res.detail.lower()
+
+
+class _FakeSessionStartFails:
+    """No real Docker: ensure_image succeeds, start() raises ContainerError."""
+
+    def __init__(self, bundle, limits=None):
+        pass
+
+    def ensure_image(self):
+        return "tag"
+
+    def start(self):
+        raise ContainerError("start failed: boom")
+
+    def stop(self):
+        pass
+
+
+def test_stage_never_crashes_when_container_start_raises(tmp_path, monkeypatch):
+    (tmp_path / "environment").mkdir()
+    (tmp_path / "environment/Dockerfile").write_text("FROM busybox\n")
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    b.root = tmp_path
+    monkeypatch.setattr(engine_mod, "ContainerSession", _FakeSessionStartFails)
+    res = run_factual_stage(b, FakeLLMClient(_responder_all(True, ["x:1"])),
+                            docker=lambda runner=None: True)
+    assert res.id == "Q06" and res.needs_human is True and res.passed is False
+
+
+class _FakeSessionOK:
+    """No real Docker: build/start succeed instantly; tracks whether stop() ran."""
+
+    instances: list["_FakeSessionOK"] = []
+
+    def __init__(self, bundle, limits=None):
+        self.stopped = False
+        _FakeSessionOK.instances.append(self)
+
+    def ensure_image(self):
+        return "tag"
+
+    def start(self):
+        return "name"
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_stage_never_crashes_when_factual_pass_raises_and_stops_session(tmp_path, monkeypatch):
+    (tmp_path / "environment").mkdir()
+    (tmp_path / "environment/Dockerfile").write_text("FROM busybox\n")
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    b.root = tmp_path
+    _FakeSessionOK.instances.clear()
+    monkeypatch.setattr(engine_mod, "ContainerSession", _FakeSessionOK)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("factual pass exploded")
+
+    monkeypatch.setattr(engine_mod, "run_factual", boom)
+    res = run_factual_stage(b, FakeLLMClient(_responder_all(True, ["x:1"])),
+                            docker=lambda runner=None: True)
+    assert res.id == "Q06" and res.needs_human is True and res.passed is False
+    assert len(_FakeSessionOK.instances) == 1
+    assert _FakeSessionOK.instances[0].stopped is True

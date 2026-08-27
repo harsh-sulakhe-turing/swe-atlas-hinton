@@ -189,8 +189,8 @@ def run_factual_stage(bundle, client, votes_log=None, limits=None,
         return _q06_needs_human("no environment/Dockerfile in bundle")
     if not docker():
         return _q06_needs_human("Docker is not available")
-    session = ContainerSession(bundle, limits=limits)
     try:
+        session = ContainerSession(bundle, limits=limits)
         session.ensure_image()
         session.start()
     except ContainerError as e:
