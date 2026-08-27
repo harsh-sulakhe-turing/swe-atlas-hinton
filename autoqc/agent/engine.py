@@ -7,8 +7,9 @@ from autoqc.agent.runner import run_agent
 from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
                                  proposer_context, adversary_context,
                                  Q06, factual_role, factual_context)
-from autoqc.agent.tools import validate_findings
+from autoqc.agent.tools import validate_findings, AgentContext
 from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
+from autoqc.agent.container import ContainerSession, docker_available, ContainerError
 
 
 def aggregate(finding_sets, allowed_ids):
@@ -90,9 +91,11 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
                        passed=passed, needs_human=needs_human, evidence=evidence[:20], detail=detail)
 
 
-def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None):
+def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None, factual=True):
     results = [run_check(c, bundle, client, ctx, k=k, votes_log=votes_log) for c in checks]
     results += [fn(bundle) for fn in DETERMINISTIC_CHECKS]
+    if factual:
+        results.append(run_factual_stage(bundle, client, votes_log=votes_log))
     return results
 
 
@@ -173,3 +176,31 @@ def run_factual(bundle, client, ctx, votes_log=None) -> CheckResult:
     detail = "" if passed and not needs_human else "criteria needing attention: " + ", ".join(problems)
     return CheckResult(id="Q06", name=Q06.name, stage=Stage.FACTUAL, severity=Severity.REJECT,
                        passed=passed, needs_human=needs_human, evidence=evidence[:20], detail=detail)
+
+
+def _q06_needs_human(reason: str) -> CheckResult:
+    return CheckResult(id="Q06", name=Q06.name, stage=Stage.FACTUAL, severity=Severity.REJECT,
+                       passed=False, needs_human=True, detail=f"Q06 not run: {reason}")
+
+
+def run_factual_stage(bundle, client, votes_log=None, limits=None,
+                      docker=docker_available) -> CheckResult:
+    if not getattr(bundle, "files_present", {}).get("environment/Dockerfile", True):
+        return _q06_needs_human("no environment/Dockerfile in bundle")
+    if not docker():
+        return _q06_needs_human("Docker is not available")
+    session = ContainerSession(bundle, limits=limits)
+    try:
+        session.ensure_image()
+        session.start()
+    except ContainerError as e:
+        return _q06_needs_human(str(e))
+    except Exception as e:  # defensive: never crash the run
+        return _q06_needs_human(f"container setup error: {e}")
+    try:
+        ctx = AgentContext(bundle_dir=bundle.root, container=session)
+        return run_factual(bundle, client, ctx, votes_log=votes_log)
+    except Exception as e:
+        return _q06_needs_human(f"factual pass error: {e}")
+    finally:
+        session.stop()

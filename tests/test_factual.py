@@ -1,5 +1,5 @@
 from pathlib import Path
-from autoqc.agent.engine import adjudicate_factual, run_factual
+from autoqc.agent.engine import adjudicate_factual, run_factual, run_factual_stage, run_semantic
 from autoqc.agent.tools import AgentContext
 from autoqc.llm import FakeLLMClient
 from autoqc.model import Stage, Severity
@@ -97,3 +97,23 @@ def test_run_factual_votes_log_records_both_rounds(tmp_path):
     log = []
     run_factual(b, FakeLLMClient(_responder_all(True, ["x.go:3"])), ctx, votes_log=log)
     assert len([e for e in log if e["role"] == "factual"]) == 2
+
+
+def test_stage_degrades_to_needs_human_when_docker_down(tmp_path):
+    (tmp_path / "environment").mkdir()
+    (tmp_path / "environment/Dockerfile").write_text("FROM busybox\n")
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    b.root = tmp_path
+    res = run_factual_stage(b, FakeLLMClient(_responder_all(True, ["x:1"])),
+                            docker=lambda runner=None: False)
+    assert res.id == "Q06" and res.needs_human is True and res.passed is False
+    assert "docker" in res.detail.lower()
+
+
+def test_run_semantic_skips_factual_when_disabled(tmp_path):
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    b.rubrics = [{"id": "1.1", "title": "t", "annotations": {"type": "positive"}}]
+    ctx = AgentContext(bundle_dir=tmp_path)
+    results = run_semantic(b, FakeLLMClient(_responder_all(True, ["x:1"])), ctx,
+                           checks=[], k=1, factual=False)
+    assert not any(r.id == "Q06" for r in results)
