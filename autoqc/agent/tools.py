@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -10,6 +11,7 @@ ALLOWED_READ = {"tests/prompt.txt", "tests/rubrics.json", "solution/answer.txt",
 @dataclass
 class AgentContext:
     bundle_dir: Path
+    container: object | None = None
 
 
 @dataclass
@@ -78,6 +80,54 @@ SUBMIT_FINDINGS = Tool(
             "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
             "reason": {"type": "string"}}}}}, "required": ["findings"]},
     run=None, terminal=True)
+
+
+_DENY = [
+    r"\bcurl\b", r"\bwget\b", r"\bsudo\b", r"\bnc\b",
+    r"\bapt(?:-get)?\s+install\b", r"\bpip3?\s+install\b",
+    r"\bgo\s+get\b", r"\bnpm\s+(?:install|i)\b",
+    r"\brm\s+-rf\s+/(?!scratch)", r">>?\s*/(?!scratch)",
+]
+
+
+def guard_command(cmd: str) -> str | None:
+    """Denylist (defense-in-depth; the network-less container is the real control).
+    Returns a rejection reason, or None if allowed."""
+    text = (cmd or "").strip()
+    if not text:
+        return "error: empty command"
+    for pat in _DENY:
+        if re.search(pat, text):
+            return ("error: command blocked by Q06 safety guard "
+                    f"(pattern {pat!r}); no network/installs, write only under /scratch")
+    return None
+
+
+def _run_bash(args: dict, ctx: AgentContext) -> str:
+    cmd = str(args.get("cmd", ""))
+    reason = guard_command(cmd)
+    if reason:
+        return reason
+    container = getattr(ctx, "container", None)
+    if container is None:
+        return "error: no container available for run_bash"
+    try:
+        return container.exec(cmd)
+    except Exception as e:  # never crash the agent loop
+        return f"error: run_bash failed: {e}"
+
+
+run_bash = Tool(
+    name="run_bash",
+    description=("Run a shell command in the task's container. The repo is checked out at "
+                 "/testbed at base_commit. No network; writes only under /scratch."),
+    parameters={"type": "object", "properties": {"cmd": {"type": "string"}},
+                "required": ["cmd"]},
+    run=_run_bash)
+
+
+def factual_tools() -> list[Tool]:
+    return [read_bundle_file, list_dir, run_bash, SUBMIT_FINDINGS]
 
 
 def default_tools() -> list[Tool]:

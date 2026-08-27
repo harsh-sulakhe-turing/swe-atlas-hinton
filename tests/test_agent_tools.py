@@ -1,6 +1,7 @@
 from pathlib import Path
 from autoqc.agent.tools import (Tool, AgentContext, read_bundle_file, list_dir,
-                                SUBMIT_FINDINGS, default_tools, validate_findings, CHECK_IDS)
+                                SUBMIT_FINDINGS, default_tools, validate_findings, CHECK_IDS,
+                                guard_command, run_bash, factual_tools)
 
 
 def _bundle(tmp_path: Path):
@@ -85,3 +86,43 @@ def test_validate_findings_rejects_empty_or_nonstring_evidence():
     ]
     valid, problems = validate_findings(bad, allowed_criterion_ids=set())
     assert valid == [] and len(problems) == 2
+
+
+class _FakeContainer:
+    def __init__(self): self.ran = []
+    def exec(self, cmd, cwd="/testbed", timeout=None):
+        self.ran.append(cmd); return f"OUT:{cmd}"
+
+
+def test_guard_blocks_network_installs_and_root_writes():
+    for bad in ["curl http://x", "wget x", "sudo rm -rf /", "apt-get install foo",
+                "pip install bar", "go get x", "echo hi > /etc/passwd", "rm -rf /"]:
+        assert guard_command(bad) is not None, bad
+
+
+def test_guard_allows_inspection_and_scratch_writes():
+    for ok in ["cat go.mod", "grep -rn Retry ./pkg", "git log -1", "go build ./...",
+               "go test ./pkg/foo/...", "echo hi > /scratch/x"]:
+        assert guard_command(ok) is None, ok
+
+
+def test_run_bash_execs_in_container():
+    c = _FakeContainer()
+    out = run_bash.run({"cmd": "cat go.mod"}, AgentContext(bundle_dir=".", container=c))
+    assert out == "OUT:cat go.mod" and c.ran == ["cat go.mod"]
+
+
+def test_run_bash_blocks_denied_command_before_exec():
+    c = _FakeContainer()
+    out = run_bash.run({"cmd": "curl http://evil"}, AgentContext(bundle_dir=".", container=c))
+    assert "blocked" in out and c.ran == []
+
+
+def test_run_bash_without_container_is_error_not_crash():
+    out = run_bash.run({"cmd": "cat x"}, AgentContext(bundle_dir="."))
+    assert out.startswith("error:")
+
+
+def test_factual_tools_includes_run_bash_and_submit():
+    names = {t.name for t in factual_tools()}
+    assert {"run_bash", "submit_findings", "read_bundle_file"} <= names
