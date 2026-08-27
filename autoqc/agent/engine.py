@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from autoqc.model import CheckResult, Stage, Severity
 from autoqc.agent.runner import run_agent
@@ -116,8 +117,76 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
     return finalize_check(check, agg, adv_own)
 
 
+def run_checks_parallel(checks, bundle, client, ctx, k, votes_log=None) -> list:
+    """Run every text check over one bounded thread pool. All proposer passes are
+    submitted up front; each check's adversary is launched when its k proposers
+    finish. Verdicts are identical to serial run_check (aggregate is order-free).
+    Bookkeeping runs only on this (main) thread; pool workers are pure passes."""
+    w = int(os.environ.get("AUTOQC_ENGINE_WORKERS", "8"))
+    preps, results_by_id = {}, {}
+    for check in checks:
+        criteria, allowed = _check_prep(check, bundle)
+        if not criteria:
+            results_by_id[check.id] = _empty_scope_result(check)
+        else:
+            preps[check.id] = (check, criteria, allowed)
+
+    prop_logs = {cid: [] for cid in preps}     # cid -> [log dict] (completion order)
+    prop_sets = {cid: [] for cid in preps}     # cid -> [own findings]
+    remaining = {cid: k for cid in preps}
+    aggs, adv_logs = {}, {}
+
+    with ThreadPoolExecutor(max_workers=max(1, w)) as pool:
+        fut_meta, pending = {}, set()
+        for cid, (check, criteria, allowed) in preps.items():
+            for _ in range(k):
+                fut = pool.submit(proposer_pass, check, bundle, client, ctx, criteria, allowed)
+                fut_meta[fut] = ("proposer", cid)
+                pending.add(fut)
+
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in done:
+                kind, cid = fut_meta.pop(fut)
+                check, criteria, allowed = preps[cid]
+                if kind == "proposer":
+                    try:
+                        own, log = fut.result()
+                    except Exception as e:  # never sink the run
+                        own, log = [], {"check": cid, "role": "proposer", "ok": False,
+                                        "findings": [], "error": repr(e)}
+                    prop_sets[cid].append(own)
+                    prop_logs[cid].append(log)
+                    remaining[cid] -= 1
+                    if remaining[cid] == 0:
+                        agg = aggregate(prop_sets[cid], allowed)
+                        aggs[cid] = agg
+                        afut = pool.submit(adversary_pass, check, bundle, client, ctx,
+                                           criteria, allowed, agg)
+                        fut_meta[afut] = ("adversary", cid)
+                        pending.add(afut)
+                else:  # adversary
+                    try:
+                        adv_own, adv_log = fut.result()
+                    except Exception as e:
+                        adv_own, adv_log = [], {"check": cid, "role": "adversary", "ok": False,
+                                               "findings": [], "error": repr(e)}
+                    adv_logs[cid] = adv_log
+                    results_by_id[cid] = finalize_check(check, aggs[cid], adv_own)
+
+    if votes_log is not None:  # deterministic order: check order, proposers then adversary
+        for check in checks:
+            cid = check.id
+            if cid in preps:
+                votes_log.extend(prop_logs[cid])
+                if cid in adv_logs:
+                    votes_log.append(adv_logs[cid])
+
+    return [results_by_id[check.id] for check in checks]
+
+
 def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None, factual=True):
-    results = [run_check(c, bundle, client, ctx, k=k, votes_log=votes_log) for c in checks]
+    results = run_checks_parallel(checks, bundle, client, ctx, k, votes_log=votes_log)
     results += [fn(bundle) for fn in DETERMINISTIC_CHECKS]
     if factual:
         results.append(run_factual_stage(bundle, client, votes_log=votes_log))
