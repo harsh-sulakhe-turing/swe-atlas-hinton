@@ -73,7 +73,7 @@ def test_start_uses_hardening_flags(tmp_path):
     for flag in ["--network=none", "--cap-drop=ALL", "--read-only",
                  "--security-opt", "no-new-privileges", "--pids-limit"]:
         assert flag in argv, f"missing {flag}"
-    assert "-w" in argv and "/testbed" in argv
+    assert argv[argv.index("-w") + 1] == "/testbed"
     tmpfs = argv[argv.index("--tmpfs") + 1]
     assert tmpfs.startswith("/scratch:")
 
@@ -95,7 +95,7 @@ def test_exec_sets_offline_caches_and_caps_output(tmp_path):
     argv = r.calls[0][0]
     assert argv[:3] == ["docker", "exec", "-w"]
     assert "GOCACHE=/scratch/go-build" in argv and "TMPDIR=/scratch/tmp" in argv
-    assert not any("GOMODCACHE" in a for a in argv)  # baked module cache untouched
+    assert not any(v in a for a in argv for v in ("GOMODCACHE", "GOPATH", "HOME"))  # baked module cache untouched
     assert argv[-3:] == ["bash", "-lc", "go build ./..."]
     assert len(out) < 50000 and "truncated" in out
 
