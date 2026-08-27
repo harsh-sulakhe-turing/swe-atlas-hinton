@@ -1,5 +1,6 @@
 import types
 from pathlib import Path
+from autoqc.agent import engine as engine_module
 from autoqc.agent.engine import run_check, run_checks_parallel, run_semantic
 from autoqc.agent.checks import SEMANTIC_CHECKS
 from autoqc.agent.tools import AgentContext
@@ -76,17 +77,37 @@ def test_parallel_votes_log_complete_for_scoped_check(tmp_path):
     assert len([e for e in q03 if e["role"] == "adversary"]) == 1
 
 
-def test_parallel_isolates_one_failing_check(tmp_path):
+def test_parallel_k_zero_equals_serial(tmp_path):
     b = _bundle()
-    def responder(messages, tools):
-        user = next(m["content"] for m in messages if m["role"] == "user")
-        if "Check Q03" in user:
+    client = FakeLLMClient(_submit_all_pass)
+    serial = [run_check(c, b, client, _ctx(tmp_path), k=0) for c in SEMANTIC_CHECKS]
+    parallel = run_checks_parallel(SEMANTIC_CHECKS, b, client, _ctx(tmp_path), k=0)
+    assert [r.id for r in parallel] == [c.id for c in SEMANTIC_CHECKS]  # no KeyError, order preserved
+    assert _verdicts(parallel) == _verdicts(serial)
+
+
+def test_parallel_isolates_one_failing_check(tmp_path, monkeypatch):
+    # Raising inside FakeLLMClient.chat would be swallowed by run_agent (it
+    # returns AgentResult(ok=False)), which never reaches the scheduler's
+    # per-future except -- so isolation is exercised by making proposer_pass
+    # itself raise for one check, driving the scheduler's own except path.
+    b = _bundle()
+    real_proposer_pass = engine_module.proposer_pass
+
+    def flaky_proposer_pass(check, bundle, client, ctx, criteria, allowed):
+        if check.id == "Q03":
             raise RuntimeError("boom on Q03 only")
-        return _submit_all_pass(messages, tools)
-    results = run_checks_parallel(SEMANTIC_CHECKS, b, FakeLLMClient(responder), _ctx(tmp_path), k=3)
+        return real_proposer_pass(check, bundle, client, ctx, criteria, allowed)
+
+    monkeypatch.setattr(engine_module, "proposer_pass", flaky_proposer_pass)
+    results = run_checks_parallel(SEMANTIC_CHECKS, b, FakeLLMClient(_submit_all_pass),
+                                  _ctx(tmp_path), k=3)
     v = _verdicts(results)
-    assert v["Q03"][1] is True          # Q03 all passes failed -> needs_human
+    assert v["Q03"][1] is True          # Q03's proposers all raised -> needs_human
     assert len(results) == len(SEMANTIC_CHECKS)  # run completed, nothing sunk
+    for c in SEMANTIC_CHECKS:
+        if c.id != "Q03":
+            assert v[c.id][0] is True   # other checks still pass normally
 
 
 def test_run_semantic_parallel_still_returns_all_checks(tmp_path):

@@ -143,6 +143,16 @@ def run_checks_parallel(checks, bundle, client, ctx, k, votes_log=None) -> list:
                 fut = pool.submit(proposer_pass, check, bundle, client, ctx, criteria, allowed)
                 fut_meta[fut] = ("proposer", cid)
                 pending.add(fut)
+            if remaining[cid] <= 0:
+                # k<=0: no proposer completion will ever fire the remaining[cid]==0
+                # check below, so match serial run_check by aggregating zero votes
+                # and launching the adversary right away.
+                agg = aggregate(prop_sets[cid], allowed)
+                aggs[cid] = agg
+                afut = pool.submit(adversary_pass, check, bundle, client, ctx,
+                                   criteria, allowed, agg)
+                fut_meta[afut] = ("adversary", cid)
+                pending.add(afut)
 
         while pending:
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
@@ -175,6 +185,9 @@ def run_checks_parallel(checks, bundle, client, ctx, k, votes_log=None) -> list:
                     results_by_id[cid] = finalize_check(check, aggs[cid], adv_own)
 
     if votes_log is not None:  # deterministic order: check order, proposers then adversary
+        # (within a single check, the proposer entries themselves are in
+        # completion order, not submission order -- this doesn't affect
+        # verdicts since aggregate() is order-independent over its votes)
         for check in checks:
             cid = check.id
             if cid in preps:
