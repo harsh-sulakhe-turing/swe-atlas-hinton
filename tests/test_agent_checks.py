@@ -2,7 +2,8 @@ import types
 from autoqc.model import Severity
 from autoqc.agent.checks import (SemanticCheck, Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11, SEMANTIC_CHECKS,
                                  proposer_role, adversary_role,
-                                 proposer_context, adversary_context)
+                                 proposer_context, adversary_context,
+                                 Q06, factual_role, factual_context)
 
 
 def _bundle(items, prompt="the question"):
@@ -63,3 +64,23 @@ def test_adversary_context_states_aggregate():
     agg = {"b": {"passed": False, "split": False, "evidence": []}}
     ctx = adversary_context(b, Q07, Q07.scope(b.rubrics), agg)
     assert "b" in ctx and ("fail" in ctx.lower() or "reject" in ctx.lower())
+
+
+def test_q06_is_reject_percriterion():
+    assert Q06.id == "Q06" and Q06.severity is Severity.REJECT
+    assert Q06.unit_mode == "criterion"
+
+
+def test_factual_role_has_run_bash():
+    names = {t.name for t in factual_role().tools}
+    assert "run_bash" in names and "submit_findings" in names
+
+
+def test_factual_context_mentions_base_commit_and_criteria():
+    class B:
+        prompt = "Explain the retry logic."
+        base_commit = "eea1d62f0438f75075d9feb2c022a86083e618b2"
+        repository = "cosi-project/runtime"
+    crit = [{"id": "1.1", "title": "States the default retry count is 3"}]
+    ctx = factual_context(B(), crit)
+    assert "eea1d62f" in ctx and "1.1" in ctx and "/testbed" in ctx

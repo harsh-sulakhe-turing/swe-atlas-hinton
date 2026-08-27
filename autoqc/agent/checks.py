@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable
 from autoqc.model import Severity
 from autoqc.agent.runner import Role
-from autoqc.agent.tools import default_tools
+from autoqc.agent.tools import default_tools, factual_tools
 
 
 @dataclass
@@ -155,6 +155,42 @@ def proposer_context(bundle, check, criteria) -> str:
             f"Judge each of these criteria (submit one finding per criterion, check_id={check.id}):\n"
             f"{_criteria_block(criteria)}\n\n"
             "passed=true if the criterion SATISFIES the check, passed=false if it VIOLATES it.")
+
+
+Q06 = SemanticCheck(
+    id="Q06", name="Factual soundness", severity=Severity.REJECT, scope=_all_criteria,
+    guidance=("A criterion VIOLATES this if the repo at base_commit does NOT support what it "
+              "grades on. A POSITIVE criterion must assert a fact that is TRUE in the repo; a "
+              "NEGATIVE criterion asserts a FALSE claim, so it is sound only if that claim is "
+              "actually FALSE in the repo. passed=true means the code backs the criterion. "
+              "Judge only criteria that make a repo-checkable claim; mark passed=true for "
+              "criteria that make no code claim (subjective/phrasing is out of scope)."))
+
+_FACTUAL_SYS = (
+    "You verify a grading rubric against the actual repository, which is checked out at "
+    "/testbed at base_commit inside a network-isolated container. For each criterion, decide "
+    "whether the code supports what it grades on: a POSITIVE criterion is sound iff its fact is "
+    "TRUE in the repo; a NEGATIVE criterion states a FALSE assertion and is sound iff that "
+    "assertion is actually FALSE in the repo. Use run_bash to read source (cat/grep/rg/find/ls/"
+    "git log|show) and, only when a claim needs it, to build/test (writes go under /scratch; no "
+    "network). If a criterion makes no repo-checkable claim, mark it passed=true. Finish by "
+    "calling submit_findings with exactly one finding per criterion; every finding's evidence "
+    "must include at least one path:line citation from the repo.")
+
+
+def factual_role() -> Role:
+    return Role(name="factual", system_prompt=_FACTUAL_SYS, tools=factual_tools())
+
+
+def factual_context(bundle, criteria) -> str:
+    return (f"Repository: {getattr(bundle, 'repository', '') or ''} at base_commit "
+            f"{getattr(bundle, 'base_commit', '') or ''} (checked out at /testbed).\n\n"
+            f"Task prompt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+            f"Check Q06 — Factual soundness.\n{Q06.guidance}\n\n"
+            f"Verify each of these criteria against the repo (submit one finding per criterion, "
+            f"check_id=Q06):\n{_criteria_block(criteria)}\n\n"
+            "passed=true if the repo supports the criterion, passed=false if it contradicts or "
+            "lacks it. Evidence must cite path:line.")
 
 
 def adversary_context(bundle, check, criteria, agg) -> str:
