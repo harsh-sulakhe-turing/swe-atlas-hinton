@@ -52,4 +52,22 @@ def run_agent(role: Role, context_text: str, client, ctx, max_turns: int = 12) -
             except Exception as e:
                 out = f"error: tool {call.name!r} failed: {e}"
             messages.append({"role": "tool", "tool_call_id": call.id, "content": out})
+
+    # Budget exhausted without a submit. Rather than throw away everything the
+    # agent learned, give it one last submit-ONLY turn so partial-but-real
+    # verdicts are salvaged. (Text checks submit on turn 1 and never reach here.)
+    submit_tool = by_name.get("submit_findings")
+    if submit_tool is not None:
+        messages.append({"role": "user", "content":
+            "You are out of exploration turns. Call submit_findings NOW with your best "
+            "verdict for every item, based on the evidence gathered so far. Do not call "
+            "any other tool."})
+        try:
+            resp = client.chat(messages, tools=[submit_tool.schema()])
+        except Exception as e:
+            return AgentResult(ok=False, reason=f"final-submit chat error: {e}")
+        for call in (resp.tool_calls or []):
+            if call.name == "submit_findings":
+                findings = call.args.get("findings", []) if isinstance(call.args, dict) else []
+                return AgentResult(findings=findings, ok=True)
     return AgentResult(ok=False, reason=f"exceeded max_turns ({max_turns}) without submit_findings")

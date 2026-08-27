@@ -66,6 +66,33 @@ def test_no_tool_calls_gets_nudged_then_submits(tmp_path):
     assert res.ok is True and calls["n"] == 2
 
 
+def test_forced_final_submit_salvages_on_budget_exhaustion(tmp_path):
+    # Agent explores every turn and never submits during the loop. On budget
+    # exhaustion run_agent must make a submit-ONLY call; the agent submits then,
+    # so partial findings are salvaged (ok=True) instead of lost.
+    def responder(messages, tools):
+        names = [t["function"]["name"] for t in (tools or [])]
+        if names == ["submit_findings"]:                       # the forced final turn
+            return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {
+                "findings": [{"check_id": "Q06", "criterion_id": "b",
+                              "passed": True, "evidence": ["ok"]}]}}]}
+        return {"tool_calls": [{"id": "r", "name": "list_dir", "args": {"path": "tests"}}]}
+    res = run_agent(_role(), "context", FakeLLMClient(responder), _ctx(tmp_path), max_turns=3)
+    assert res.ok is True and res.findings[0]["criterion_id"] == "b"
+
+
+def test_forced_final_submit_still_fails_if_agent_refuses(tmp_path):
+    # If the agent still won't submit even on the submit-only final turn, the
+    # result is the unchanged ok=False fallback.
+    def responder(messages, tools):
+        names = [t["function"]["name"] for t in (tools or [])]
+        if names == ["submit_findings"]:
+            return {"text": "still not submitting"}            # no tool call
+        return {"tool_calls": [{"id": "r", "name": "list_dir", "args": {"path": "tests"}}]}
+    res = run_agent(_role(), "context", FakeLLMClient(responder), _ctx(tmp_path), max_turns=2)
+    assert res.ok is False and "max_turns" in res.reason
+
+
 def test_raising_tool_degrades_not_crash(tmp_path):
     from autoqc.agent.tools import Tool, default_tools
     def boom(args, ctx): raise RuntimeError("kaboom")
