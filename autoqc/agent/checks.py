@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable
 from autoqc.model import Severity
 from autoqc.agent.runner import Role
-from autoqc.agent.tools import default_tools, factual_tools
+from autoqc.agent.tools import default_tools, factual_tools, text_tools
 
 
 @dataclass
@@ -118,11 +118,11 @@ _ADVERSARY_SYS = (
 
 
 def proposer_role() -> Role:
-    return Role(name="proposer", system_prompt=_PROPOSER_SYS, tools=default_tools())
+    return Role(name="proposer", system_prompt=_PROPOSER_SYS, tools=text_tools())
 
 
 def adversary_role() -> Role:
-    return Role(name="adversary", system_prompt=_ADVERSARY_SYS, tools=default_tools())
+    return Role(name="adversary", system_prompt=_ADVERSARY_SYS, tools=text_tools())
 
 
 def _criteria_block(criteria) -> str:

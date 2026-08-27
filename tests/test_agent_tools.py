@@ -1,7 +1,7 @@
 from pathlib import Path
 from autoqc.agent.tools import (Tool, AgentContext, read_bundle_file, list_dir,
                                 SUBMIT_FINDINGS, default_tools, validate_findings, CHECK_IDS,
-                                guard_command, run_bash, factual_tools)
+                                guard_command, run_bash, factual_tools, text_tools)
 
 
 def _bundle(tmp_path: Path):
@@ -133,3 +133,8 @@ def test_run_bash_wraps_container_exception():
         def exec(self, cmd, cwd="/testbed", timeout=None): raise RuntimeError("kaboom")
     out = run_bash.run({"cmd": "cat go.mod"}, AgentContext(bundle_dir=".", container=Boom()))
     assert out.startswith("error:") and "kaboom" in out
+
+
+def test_text_tools_is_submit_only():
+    names = [t.name for t in text_tools()]
+    assert names == ["submit_findings"]

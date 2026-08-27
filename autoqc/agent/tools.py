@@ -134,6 +134,12 @@ def default_tools() -> list[Tool]:
     return [read_bundle_file, list_dir, SUBMIT_FINDINGS]
 
 
+def text_tools() -> list[Tool]:
+    """Text checks preload the whole bundle into context, so the agent needs no
+    read tools — only the terminal submit. Forces a single-turn answer."""
+    return [SUBMIT_FINDINGS]
+
+
 def validate_findings(findings, allowed_criterion_ids: set[str]):
     """Return (valid, problems). A finding is valid iff check_id is a known check,
     criterion_id is a known rubric id (or 'rubric'), passed is bool, evidence non-empty."""

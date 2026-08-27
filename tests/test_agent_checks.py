@@ -90,3 +90,14 @@ def test_factual_context_mentions_base_commit_and_criteria():
     ctx = factual_context(B(), crit)
     assert "eea1d62f" in ctx and "1.1" in ctx and "/testbed" in ctx
     assert "cosi-project/runtime" in ctx
+
+
+def test_text_roles_have_no_read_tools():
+    for role in (proposer_role(), adversary_role()):
+        names = {t.name for t in role.tools}
+        assert names == {"submit_findings"}, names
+
+
+def test_factual_role_still_has_run_bash():
+    names = {t.name for t in factual_role().tools}
+    assert "run_bash" in names and "submit_findings" in names
