@@ -54,6 +54,17 @@ def test_adjudicate_agree_reject_prose_evidence_different_files_needs_human():
     assert a["1"]["needs_human"] is True
 
 
+def test_adjudicate_agree_reject_no_citation_is_not_a_hard_reject():
+    # Neither round cites a real path:line -- the shared leading word ("The")
+    # must not make _files() treat these as the same file and hard-reject.
+    a = adjudicate_factual(
+        [_f("1", False, ["The code is wrong"])],
+        [_f("1", False, ["The behavior is wrong"])],
+        {"1"},
+    )
+    assert a["1"]["needs_human"] is True
+
+
 def _bundle_with(criteria):
     class B:
         prompt = "p"; base_commit = "abc"; repository = "r"

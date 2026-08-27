@@ -102,8 +102,10 @@ def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=Non
 def _files(evidence) -> set[str]:
     """Path prefixes cited in evidence. Scans the whole string for a
     path:line-shaped token (evidence only has to CONTAIN one, not start
-    with one); falls back to the pre-':' first token if none is found.
-    Used to require same-file agreement."""
+    with one). Evidence with no such token contributes nothing -- there is
+    no fallback to a first-whitespace-token guess, since that could make two
+    citation-less rejects look like the same file by coincidence and turn
+    into a false hard reject. Used to require same-file agreement."""
     out = set()
     for e in evidence or []:
         s = str(e).strip()
@@ -112,9 +114,6 @@ def _files(evidence) -> set[str]:
         m = re.search(r'([^\s:]+):\d+', s)
         if m:
             out.add(m.group(1))
-        else:
-            head = s.split()[0]
-            out.add(head.split(":", 1)[0])
     return out
 
 
