@@ -2,6 +2,8 @@ import types
 from pathlib import Path
 from autoqc.model import Stage, Severity
 from autoqc.agent.engine import run_check, run_semantic
+from autoqc.agent.engine import (proposer_pass, adversary_pass, finalize_check,
+                                 _check_prep, TEXT_MAX_TURNS, aggregate)
 from autoqc.agent.checks import Q07
 from autoqc.agent.tools import AgentContext
 from autoqc.llm import FakeLLMClient
@@ -99,6 +101,37 @@ def test_run_semantic_returns_one_result_per_check(tmp_path):
     results = run_semantic(b, FakeLLMClient(lambda m, t: _submit([])), _ctx(tmp_path), k=1, factual=False)
     ids = {r.id for r in results}
     assert {"Q07", "Q03", "Q09", "Q12"} <= ids
+
+
+def test_text_max_turns_is_low():
+    assert TEXT_MAX_TURNS == 3
+
+
+def test_proposer_pass_returns_own_and_log(tmp_path):
+    b = _bundle(["n1"])
+    criteria, allowed = _check_prep(Q07, b)
+    own, log = proposer_pass(Q07, b, FakeLLMClient(lambda m, t: _submit([_f("n1", False)])),
+                             _ctx(tmp_path), criteria, allowed)
+    assert log == {"check": "Q07", "role": "proposer", "ok": True,
+                   "findings": [_f("n1", False)]}
+    assert own == [_f("n1", False)]
+
+
+def test_proposer_pass_never_submits_is_bounded_and_not_ok(tmp_path):
+    # responder returns text, never calls submit -> bounded by TEXT_MAX_TURNS -> ok False
+    b = _bundle(["n1"])
+    criteria, allowed = _check_prep(Q07, b)
+    own, log = proposer_pass(Q07, b, FakeLLMClient(lambda m, t: {"text": "hmm"}),
+                             _ctx(tmp_path), criteria, allowed)
+    assert log["ok"] is False and own == []
+
+
+def test_finalize_check_matches_serial_reject(tmp_path):
+    b = _bundle(["n1"])
+    criteria, allowed = _check_prep(Q07, b)
+    agg = aggregate([[_f("n1", False)], [_f("n1", False)], [_f("n1", False)]], allowed)
+    r = finalize_check(Q07, agg, [_f("n1", False)])  # adversary agrees reject
+    assert r.passed is False and r.needs_human is False and "n1" in r.detail
 
 
 def test_run_semantic_includes_deterministic_checks(tmp_path):

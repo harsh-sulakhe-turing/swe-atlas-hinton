@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable
 from autoqc.model import Severity
 from autoqc.agent.runner import Role
-from autoqc.agent.tools import default_tools, factual_tools
+from autoqc.agent.tools import factual_tools, text_tools
 
 
 @dataclass
@@ -106,7 +106,7 @@ SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "
-    "criteria you are given. You may read bundle files with the tools if helpful. Finish by "
+    "criteria you are given. Judge only from the bundle context provided below. Finish by "
     "calling submit_findings with exactly one finding per listed criterion; evidence must quote "
     "the criterion text you relied on.")
 
@@ -118,11 +118,11 @@ _ADVERSARY_SYS = (
 
 
 def proposer_role() -> Role:
-    return Role(name="proposer", system_prompt=_PROPOSER_SYS, tools=default_tools())
+    return Role(name="proposer", system_prompt=_PROPOSER_SYS, tools=text_tools())
 
 
 def adversary_role() -> Role:
-    return Role(name="adversary", system_prompt=_ADVERSARY_SYS, tools=default_tools())
+    return Role(name="adversary", system_prompt=_ADVERSARY_SYS, tools=text_tools())
 
 
 def _criteria_block(criteria) -> str:

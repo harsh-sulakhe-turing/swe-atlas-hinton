@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from autoqc.model import CheckResult, Stage, Severity
 from autoqc.agent.runner import run_agent
@@ -10,6 +12,13 @@ from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
 from autoqc.agent.tools import validate_findings, AgentContext
 from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
 from autoqc.agent.container import ContainerSession, docker_available, ContainerError
+
+
+def _engine_workers(default: int = 8) -> int:
+    try:
+        return int(os.environ.get("AUTOQC_ENGINE_WORKERS", str(default)))
+    except (TypeError, ValueError):
+        return default
 
 
 def aggregate(finding_sets, allowed_ids):
@@ -55,30 +64,37 @@ def _own(findings, check_id, allowed_ids):
     return [f for f in valid if f.get("check_id") == check_id]
 
 
-def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
+TEXT_MAX_TURNS = 3
+
+
+def _empty_scope_result(check) -> CheckResult:
+    return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
+                       severity=check.severity, passed=True)
+
+
+def _check_prep(check, bundle):
     items = bundle.rubrics if isinstance(getattr(bundle, "rubrics", None), list) else []
     criteria = check.scope(items)
-    if not criteria:
-        return CheckResult(id=check.id, name=check.name, stage=Stage.SEMANTIC,
-                           severity=check.severity, passed=True)
-    allowed = {"rubric"} if getattr(check, "unit_mode", "criterion") == "rubric" else {c["id"] for c in criteria}
+    allowed = ({"rubric"} if getattr(check, "unit_mode", "criterion") == "rubric"
+               else {c["id"] for c in criteria})
+    return criteria, allowed
 
-    finding_sets = []
-    p_ctx = proposer_context(bundle, check, criteria)
-    for _ in range(k):
-        res = run_agent(proposer_role(), p_ctx, client, ctx)
-        if votes_log is not None:
-            votes_log.append({"check": check.id, "role": "proposer",
-                              "ok": res.ok, "findings": res.findings})
-        finding_sets.append(_own(res.findings, check.id, allowed) if res.ok else [])
 
-    agg = aggregate(finding_sets, allowed)
-    adv_res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg), client, ctx)
-    if votes_log is not None:
-        votes_log.append({"check": check.id, "role": "adversary",
-                          "ok": adv_res.ok, "findings": adv_res.findings})
-    adv_findings = _own(adv_res.findings, check.id, allowed) if adv_res.ok else []
+def proposer_pass(check, bundle, client, ctx, criteria, allowed):
+    res = run_agent(proposer_role(), proposer_context(bundle, check, criteria),
+                    client, ctx, max_turns=TEXT_MAX_TURNS)
+    log = {"check": check.id, "role": "proposer", "ok": res.ok, "findings": res.findings}
+    return (_own(res.findings, check.id, allowed) if res.ok else []), log
 
+
+def adversary_pass(check, bundle, client, ctx, criteria, allowed, agg):
+    res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg),
+                    client, ctx, max_turns=TEXT_MAX_TURNS)
+    log = {"check": check.id, "role": "adversary", "ok": res.ok, "findings": res.findings}
+    return (_own(res.findings, check.id, allowed) if res.ok else []), log
+
+
+def finalize_check(check, agg, adv_findings) -> CheckResult:
     adj = adjudicate(agg, adv_findings)
     passed = all(v["passed"] for v in adj.values()) if adj else True
     needs_human = any(v["needs_human"] for v in adj.values())
@@ -91,8 +107,106 @@ def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
                        passed=passed, needs_human=needs_human, evidence=evidence[:20], detail=detail)
 
 
+def run_check(check, bundle, client, ctx, k=3, votes_log=None) -> CheckResult:
+    criteria, allowed = _check_prep(check, bundle)
+    if not criteria:
+        return _empty_scope_result(check)
+    finding_sets = []
+    for _ in range(k):
+        own, log = proposer_pass(check, bundle, client, ctx, criteria, allowed)
+        if votes_log is not None:
+            votes_log.append(log)
+        finding_sets.append(own)
+    agg = aggregate(finding_sets, allowed)
+    adv_own, adv_log = adversary_pass(check, bundle, client, ctx, criteria, allowed, agg)
+    if votes_log is not None:
+        votes_log.append(adv_log)
+    return finalize_check(check, agg, adv_own)
+
+
+def run_checks_parallel(checks, bundle, client, ctx, k, votes_log=None) -> list:
+    """Run every text check over one bounded thread pool. All proposer passes are
+    submitted up front; each check's adversary is launched when its k proposers
+    finish. Verdicts are identical to serial run_check (aggregate is order-free).
+    Bookkeeping runs only on this (main) thread; pool workers are pure passes."""
+    w = _engine_workers()
+    preps, results_by_id = {}, {}
+    for check in checks:
+        criteria, allowed = _check_prep(check, bundle)
+        if not criteria:
+            results_by_id[check.id] = _empty_scope_result(check)
+        else:
+            preps[check.id] = (check, criteria, allowed)
+
+    prop_logs = {cid: [] for cid in preps}     # cid -> [log dict] (completion order)
+    prop_sets = {cid: [] for cid in preps}     # cid -> [own findings]
+    remaining = {cid: k for cid in preps}
+    aggs, adv_logs = {}, {}
+
+    with ThreadPoolExecutor(max_workers=max(1, w)) as pool:
+        fut_meta, pending = {}, set()
+        for cid, (check, criteria, allowed) in preps.items():
+            for _ in range(k):
+                fut = pool.submit(proposer_pass, check, bundle, client, ctx, criteria, allowed)
+                fut_meta[fut] = ("proposer", cid)
+                pending.add(fut)
+            if remaining[cid] <= 0:
+                # k<=0: no proposer completion will ever fire the remaining[cid]==0
+                # check below, so match serial run_check by aggregating zero votes
+                # and launching the adversary right away.
+                agg = aggregate(prop_sets[cid], allowed)
+                aggs[cid] = agg
+                afut = pool.submit(adversary_pass, check, bundle, client, ctx,
+                                   criteria, allowed, agg)
+                fut_meta[afut] = ("adversary", cid)
+                pending.add(afut)
+
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in done:
+                kind, cid = fut_meta.pop(fut)
+                check, criteria, allowed = preps[cid]
+                if kind == "proposer":
+                    try:
+                        own, log = fut.result()
+                    except Exception as e:  # never sink the run
+                        own, log = [], {"check": cid, "role": "proposer", "ok": False,
+                                        "findings": [], "error": repr(e)}
+                    prop_sets[cid].append(own)
+                    prop_logs[cid].append(log)
+                    remaining[cid] -= 1
+                    if remaining[cid] == 0:
+                        agg = aggregate(prop_sets[cid], allowed)
+                        aggs[cid] = agg
+                        afut = pool.submit(adversary_pass, check, bundle, client, ctx,
+                                           criteria, allowed, agg)
+                        fut_meta[afut] = ("adversary", cid)
+                        pending.add(afut)
+                else:  # adversary
+                    try:
+                        adv_own, adv_log = fut.result()
+                    except Exception as e:
+                        adv_own, adv_log = [], {"check": cid, "role": "adversary", "ok": False,
+                                               "findings": [], "error": repr(e)}
+                    adv_logs[cid] = adv_log
+                    results_by_id[cid] = finalize_check(check, aggs[cid], adv_own)
+
+    if votes_log is not None:  # deterministic order: check order, proposers then adversary
+        # (within a single check, the proposer entries themselves are in
+        # completion order, not submission order -- this doesn't affect
+        # verdicts since aggregate() is order-independent over its votes)
+        for check in checks:
+            cid = check.id
+            if cid in preps:
+                votes_log.extend(prop_logs[cid])
+                if cid in adv_logs:
+                    votes_log.append(adv_logs[cid])
+
+    return [results_by_id[check.id] for check in checks]
+
+
 def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=None, factual=True):
-    results = [run_check(c, bundle, client, ctx, k=k, votes_log=votes_log) for c in checks]
+    results = run_checks_parallel(checks, bundle, client, ctx, k, votes_log=votes_log)
     results += [fn(bundle) for fn in DETERMINISTIC_CHECKS]
     if factual:
         results.append(run_factual_stage(bundle, client, votes_log=votes_log))
