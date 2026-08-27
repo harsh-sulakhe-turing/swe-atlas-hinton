@@ -47,7 +47,7 @@ def test_semantic_runs_with_client_all_pass(tmp_path):
     b = tmp_path / "task"; b.mkdir()
     _bundle(b, "2.1: Claims that X fails")
     # every criterion passes both checks
-    v = run(b, tmp_path / "out", llm=FakeLLMClient(_all_pass))
+    v = run(b, tmp_path / "out", llm=FakeLLMClient(_all_pass), factual=False)
     rec = json.loads((tmp_path / "out/review_record.json").read_text())
     assert {"Q07", "Q03"} <= {r["id"] for r in rec["results"]}
     assert v is Verdict.SOUND
@@ -56,7 +56,7 @@ def test_semantic_runs_with_client_all_pass(tmp_path):
 def test_semantic_reject_makes_not_sound(tmp_path):
     b = tmp_path / "task"; b.mkdir()
     _bundle(b, "2.1: Does not claim that X fails")  # a Q07 violation
-    v = run(b, tmp_path / "out", llm=FakeLLMClient(_fail_q07))
+    v = run(b, tmp_path / "out", llm=FakeLLMClient(_fail_q07), factual=False)
     assert v is Verdict.NOT_SOUND
     assert "Q07" in (tmp_path / "out/report.md").read_text()
 

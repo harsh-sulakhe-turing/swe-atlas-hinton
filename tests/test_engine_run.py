@@ -96,7 +96,7 @@ def test_votes_log_records_passes(tmp_path):
 
 def test_run_semantic_returns_one_result_per_check(tmp_path):
     b = _bundle(["n1"])
-    results = run_semantic(b, FakeLLMClient(lambda m, t: _submit([])), _ctx(tmp_path), k=1)
+    results = run_semantic(b, FakeLLMClient(lambda m, t: _submit([])), _ctx(tmp_path), k=1, factual=False)
     ids = {r.id for r in results}
     assert {"Q07", "Q03", "Q09", "Q12"} <= ids
 
@@ -111,6 +111,6 @@ def test_run_semantic_includes_deterministic_checks(tmp_path):
         "annotations": {"type": "positive hli verifier", "importance": "must have"}}], prompt="q")
     results = run_semantic(b, FakeLLMClient(lambda m, t: {"tool_calls": [
         {"id": "s", "name": "submit_findings", "args": {"findings": []}}]}),
-        AgentContext(bundle_dir=tmp_path), k=1)
+        AgentContext(bundle_dir=tmp_path), k=1, factual=False)
     ids = {r.id for r in results}
     assert {"Q09", "Q12"} <= ids  # deterministic checks present

@@ -98,7 +98,7 @@ def run_corpus(cases, client, out_root, k=3) -> list[dict]:
     out_root = Path(out_root)
     scored = []
     for case in cases:
-        verdict = run(case.bundle_dir, out_root / case.name, llm=client, k=k)
+        verdict = run(case.bundle_dir, out_root / case.name, llm=client, k=k, factual=False)
         rec = json.loads((out_root / case.name / "review_record.json").read_text())
         results = [CheckResult(id=r["id"], name=r["name"],
                                stage=Stage(r["stage"]), severity=Severity(r["severity"]),

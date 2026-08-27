@@ -14,14 +14,14 @@ from autoqc.llm import default_client
 _EXIT = {Verdict.SOUND: 0, Verdict.NEEDS_HUMAN_REVIEW: 1, Verdict.NOT_SOUND: 2}
 
 
-def run(bundle_dir, out_dir, llm=None, k: int = 3) -> Verdict:
+def run(bundle_dir, out_dir, llm=None, k: int = 3, factual: bool = True) -> Verdict:
     bundle = load_bundle(Path(bundle_dir))
     results = run_structural(bundle)
 
     client = llm if llm is not None else default_client()
     if client is not None:
         ctx = AgentContext(bundle_dir=Path(bundle_dir))
-        results.extend(run_semantic(bundle, client, ctx, k=k))
+        results.extend(run_semantic(bundle, client, ctx, k=k, factual=factual))
 
     verdict = compute_verdict(results)
     out = Path(out_dir)

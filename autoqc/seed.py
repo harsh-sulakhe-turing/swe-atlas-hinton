@@ -35,3 +35,20 @@ def seed_wildcard(items: list[dict]) -> tuple[list[dict], str | None]:
             it["title"] = title.rstrip(".") + ", or similar"
             return mutated, str(it.get("id")) if it.get("id") is not None else None
     return mutated, None
+
+
+def seed_factual(items: list[dict]) -> tuple[list[dict], str | None]:
+    """Inject a Q06 defect: append a claim about a symbol guaranteed absent from
+    any repo to the first positive criterion's title, so the code cannot support
+    it. Returns (mutated_items, mutated_id). Does not mutate input."""
+    mutated = copy.deepcopy(items)
+    for it in mutated:
+        if not isinstance(it, dict):
+            continue
+        ann = it.get("annotations")
+        typ = ann.get("type", "") if isinstance(ann, dict) else ""
+        if "positive" in str(typ):
+            title = str(it.get("title", "")).rstrip(".")
+            it["title"] = title + ", implemented by the function `nonexistent_autoqc_symbol_xyz`"
+            return mutated, str(it.get("id")) if it.get("id") is not None else None
+    return mutated, None
