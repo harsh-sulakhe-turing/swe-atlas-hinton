@@ -67,7 +67,7 @@ def _own(findings, check_id, allowed_ids):
 TEXT_MAX_TURNS = 3
 
 
-def _factual_max_turns(default: int = 40) -> int:
+def _factual_max_turns(default: int = 250) -> int:
     try:
         return int(os.environ.get("AUTOQC_FACTUAL_MAX_TURNS", str(default)))
     except (TypeError, ValueError):
