@@ -9,10 +9,16 @@ from autoqc.model import Verdict
 
 def _extract(messages):
     txt = " ".join(m.get("content", "") for m in messages)
-    cm = re.search(r"check_id=(Q\d\d)", txt)
+    cm = re.search(r"check_id=(Q\d\d|P\d\d)", txt)
     cid = cm.group(1) if cm else "Q07"
     if 'criterion_id="rubric"' in txt:      # rubric-mode checks submit ONE "rubric" finding
         ids = ["rubric"]
+    elif 'criterion_id="prompt"' in txt:    # prose checks on prompt
+        ids = ["prompt"]
+    elif 'criterion_id="answer"' in txt:    # prose checks on answer
+        ids = ["answer"]
+    elif 'criterion_id="bundle"' in txt:    # prose checks on bundle
+        ids = ["bundle"]
     else:
         ids = list(dict.fromkeys(re.findall(r"criterion_id=([0-9a-fA-F]{6,})", txt))) or ["rubric"]
     return cid, ids

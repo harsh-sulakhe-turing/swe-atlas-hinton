@@ -108,7 +108,23 @@ Q11 = SemanticCheck(
               "values, file lists, single line numbers) with little causal or synthesis content. "
               "passed=true if the criteria as a whole require meaningful reasoning, not just lookups."))
 
-SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11]
+P02 = SemanticCheck(
+    id="P02", name="Single coherent goal", severity=Severity.REJECT, scope=_prompt_unit,
+    unit_mode="prompt", role_kind="prose",
+    guidance=("The prompt VIOLATES this if it bundles two or more independent tasks/goals "
+              "(each separately deliverable) into one request. A single question with several "
+              "closely-related sub-parts that build to one answer is FINE. passed=true if the "
+              "prompt pursues one coherent goal."))
+
+P03 = SemanticCheck(
+    id="P03", name="Natural conversational request", severity=Severity.REJECT, scope=_prompt_unit,
+    unit_mode="prompt", role_kind="prose",
+    guidance=("The prompt VIOLATES this if it reads as a rigid enumerated checklist / numbered "
+              "instruction list rather than a natural developer question, OR if it telegraphs the "
+              "measured result the answer is supposed to discover. Prose with a few inline "
+              "sub-questions is FINE. passed=true if it reads as a natural, non-spoiling request."))
+
+SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11, P02, P03]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "
