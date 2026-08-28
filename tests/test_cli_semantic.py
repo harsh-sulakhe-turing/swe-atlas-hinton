@@ -41,6 +41,7 @@ def _bundle(root: Path, neg_title):
     (root / "solution").mkdir(); (root / "solution/answer.txt").write_text("a")
     (root / "environment").mkdir(); (root / "environment/Dockerfile").write_text("FROM x")
     (root / "task.toml").write_text('[metadata]\nrepository="o/r"\nbase_commit="%s"\n' % ("a" * 40))
+    (root / "instruction.md").write_text("# A Good Instruction")
 
 
 def test_semantic_runs_with_client_all_pass(tmp_path):
