@@ -124,7 +124,46 @@ P03 = SemanticCheck(
               "measured result the answer is supposed to discover. Prose with a few inline "
               "sub-questions is FINE. passed=true if it reads as a natural, non-spoiling request."))
 
-SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11, P02, P03]
+A01 = SemanticCheck(
+    id="A01", name="Investigation-first opening", severity=Severity.WARN, scope=_answer_unit,
+    unit_mode="answer", role_kind="prose",
+    guidance=("The answer VIOLATES this if it OPENS with the conclusion / a 'short answer' lede "
+              "before any acknowledgment of investigation. A brief summary is fine AFTER an opening "
+              "that acknowledges exploring the codebase. passed=true if it opens investigation-first."))
+
+A02 = SemanticCheck(
+    id="A02", name="Continuous narrative", severity=Severity.WARN, scope=_answer_unit,
+    unit_mode="answer", role_kind="prose",
+    guidance=("The answer VIOLATES this if it is organized under bold or numbered SECTION HEADERS "
+              "(e.g. '**Root cause**', '1. Summary') rather than continuous prose that interleaves "
+              "reasoning and evidence. Inline code blocks and their output are fine. passed=true if "
+              "it reads as continuous narrative."))
+
+A03 = SemanticCheck(
+    id="A03", name="First-person voice", severity=Severity.WARN, scope=_answer_unit,
+    unit_mode="answer", role_kind="prose",
+    guidance=("The answer VIOLATES this if it is NOT written in sustained first-person ('I traced', "
+              "'I confirmed'). An impersonal report voice ('The system does X') throughout violates "
+              "it. passed=true if first-person narration is sustained."))
+
+A04 = SemanticCheck(
+    id="A04", name="Evidence shown inline", severity=Severity.REJECT, scope=_answer_unit,
+    unit_mode="answer", role_kind="prose",
+    guidance=("The answer VIOLATES this if it CLAIMS an empirical result (ran a command, observed a "
+              "value/state/error) but does NOT show the actual command AND its output inline. Pure "
+              "code-reading conclusions with file:line citations do not need command output. "
+              "passed=true if every claimed run shows command + output."))
+
+A05 = SemanticCheck(
+    id="A05", name="Bash-only method", severity=Severity.WARN, scope=_answer_unit,
+    unit_mode="answer", role_kind="prose",
+    guidance=("The answer VIOLATES this if its investigation METHOD is creating/committing a "
+              "script or source file as the deliverable, or modifying the repo, rather than "
+              "read-only bash exploration (grep/cat/find/git plus temporary, cleaned-up probes). "
+              "passed=true if the method is read-only bash investigation."))
+
+SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11,
+                   P02, P03, A01, A02, A03, A04, A05]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "

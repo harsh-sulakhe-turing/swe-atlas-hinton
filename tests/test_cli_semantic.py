@@ -9,7 +9,7 @@ from autoqc.model import Verdict
 
 def _extract(messages):
     txt = " ".join(m.get("content", "") for m in messages)
-    cm = re.search(r"check_id=(Q\d\d|P\d\d)", txt)
+    cm = re.search(r"check_id=(Q\d\d|P\d\d|A\d\d)", txt)
     cid = cm.group(1) if cm else "Q07"
     if 'criterion_id="rubric"' in txt:      # rubric-mode checks submit ONE "rubric" finding
         ids = ["rubric"]

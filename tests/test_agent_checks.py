@@ -1,6 +1,6 @@
 import types
 from autoqc.model import Severity
-from autoqc.agent.checks import (SemanticCheck, Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11, P02, P03, SEMANTIC_CHECKS,
+from autoqc.agent.checks import (SemanticCheck, Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11, P02, P03, A01, A02, A03, A04, A05, SEMANTIC_CHECKS,
                                  proposer_role, adversary_role,
                                  proposer_context, adversary_context,
                                  Q06, factual_role, factual_context)
@@ -21,11 +21,13 @@ def _neg(id_, title="2.1: Claims that X"):
 
 
 def test_registry_and_severities():
-    assert set(c.id for c in SEMANTIC_CHECKS) == {"Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q10", "Q11", "P02", "P03"}
+    assert set(c.id for c in SEMANTIC_CHECKS) == {"Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q10", "Q11", "P02", "P03", "A01", "A02", "A03", "A04", "A05"}
     assert all(c.severity is Severity.REJECT for c in [Q07, Q03, Q01, Q02, Q05])
     assert all(c.severity is Severity.REJECT for c in [Q04])
     assert all(c.severity is Severity.REJECT for c in [P02, P03])
     assert all(c.severity is Severity.WARN for c in [Q08, Q10, Q11])
+    assert all(c.severity is Severity.REJECT for c in [A04])
+    assert all(c.severity is Severity.WARN for c in [A01, A02, A03, A05])
 
 
 def test_q07_scope_is_negatives_only():
