@@ -14,6 +14,7 @@ class SemanticCheck:
     scope: Callable          # (items) -> list[dict]
     guidance: str
     unit_mode: str = "criterion"
+    role_kind: str = "rubric"
 
 
 def _is_dict_crit(it):
@@ -34,6 +35,11 @@ def _positives(items):
     return [it for it in (items or [])
             if _is_dict_crit(it) and "positive" in str(
                 it.get("annotations", {}).get("type", "") if isinstance(it.get("annotations"), dict) else "")]
+
+
+def _prompt_unit(items): return [{"id": "prompt"}]
+def _answer_unit(items): return [{"id": "answer"}]
+def _bundle_unit(items): return [{"id": "bundle"}]
 
 
 Q07 = SemanticCheck(
@@ -125,6 +131,27 @@ def adversary_role() -> Role:
     return Role(name="adversary", system_prompt=_ADVERSARY_SYS, tools=text_tools())
 
 
+_PROSE_PROPOSER_SYS = (
+    "You are a strict QC reviewer of a SWE task's authored text (its prompt or its "
+    "reference answer). Judge only the one check and the one document you are given, "
+    "from the text shown below. Finish by calling submit_findings with exactly one "
+    "finding for the listed unit; evidence must quote the text you relied on.")
+
+_PROSE_ADVERSARY_SYS = (
+    "You are an adversarial second reviewer of authored SWE task text. If a prior "
+    "review marked the document FAIL, argue whether it is actually acceptable; if PASS, "
+    "look for a violation it missed. Finish by calling submit_findings with your verdict "
+    "for the one unit; passed=true means the document is fine.")
+
+
+def prose_proposer_role() -> Role:
+    return Role(name="prose_proposer", system_prompt=_PROSE_PROPOSER_SYS, tools=text_tools())
+
+
+def prose_adversary_role() -> Role:
+    return Role(name="prose_adversary", system_prompt=_PROSE_ADVERSARY_SYS, tools=text_tools())
+
+
 def _criteria_block(criteria) -> str:
     return "\n".join(f"- criterion_id={c['id']}  title={c.get('title','')!r}" for c in criteria)
 
@@ -142,7 +169,30 @@ def _full_rubric_block(bundle) -> str:
     return "\n".join(lines)
 
 
+def _doc_text(bundle, unit_mode) -> str:
+    if unit_mode == "prompt":
+        return f"Task prompt (tests/prompt.txt):\n{getattr(bundle, 'prompt', '') or ''}"
+    if unit_mode == "answer":
+        return (f"Task prompt (for context):\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+                f"Reference answer (solution/answer.txt):\n{getattr(bundle, 'answer', '') or ''}")
+    # bundle: alignment across all three files
+    return (f"instruction.md:\n{getattr(bundle, 'instruction', '') or ''}\n\n"
+            f"tests/prompt.txt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+            f"solution/answer.txt:\n{getattr(bundle, 'answer', '') or ''}")
+
+
+def _doc_context(bundle, check) -> str:
+    unit = check.unit_mode
+    return (f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
+            f"{_doc_text(bundle, unit)}\n\n"
+            f"Judge this document AS A WHOLE for the check. Submit EXACTLY ONE finding "
+            f"with check_id={check.id} and criterion_id=\"{unit}\": passed=true if it "
+            f"SATISFIES the check, passed=false if it VIOLATES it; evidence must quote the text.")
+
+
 def proposer_context(bundle, check, criteria) -> str:
+    if check.unit_mode in ("prompt", "answer", "bundle"):
+        return _doc_context(bundle, check)
     if check.unit_mode == "rubric":
         return (f"Task prompt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
                 f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
@@ -194,6 +244,15 @@ def factual_context(bundle, criteria) -> str:
 
 
 def adversary_context(bundle, check, criteria, agg) -> str:
+    if check.unit_mode in ("prompt", "answer", "bundle"):
+        unit = check.unit_mode
+        v = agg.get(unit, {})
+        verdict = "PASS" if v.get("passed") else "FAIL"
+        return (f"Check {check.id} — {check.name}.\n{check.guidance}\n\n"
+                f"{_doc_text(bundle, unit)}\n\n"
+                f"A prior review judged this document: {verdict}. Challenge that per the "
+                f"rules above, then submit EXACTLY ONE finding (check_id={check.id}, "
+                f"criterion_id=\"{unit}\").")
     if check.unit_mode == "rubric":
         v = agg.get("rubric", {})
         verdict = "PASS" if v.get("passed") else "FAIL (reject)"

@@ -8,7 +8,8 @@ from autoqc.model import CheckResult, Stage, Severity
 from autoqc.agent.runner import run_agent
 from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
                                  proposer_context, adversary_context,
-                                 Q06, factual_role, factual_context)
+                                 Q06, factual_role, factual_context,
+                                 prose_proposer_role, prose_adversary_role)
 from autoqc.agent.tools import validate_findings, AgentContext
 from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
 from autoqc.agent.container import ContainerSession, docker_available, ContainerError
@@ -95,14 +96,18 @@ def _check_prep(check, bundle):
 
 
 def proposer_pass(check, bundle, client, ctx, criteria, allowed):
-    res = run_agent(proposer_role(), proposer_context(bundle, check, criteria),
+    role = (prose_proposer_role() if getattr(check, "role_kind", "rubric") == "prose"
+            else proposer_role())
+    res = run_agent(role, proposer_context(bundle, check, criteria),
                     client, ctx, max_turns=TEXT_MAX_TURNS)
     log = {"check": check.id, "role": "proposer", "ok": res.ok, "findings": res.findings}
     return (_own(res.findings, check.id, allowed) if res.ok else []), log
 
 
 def adversary_pass(check, bundle, client, ctx, criteria, allowed, agg):
-    res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg),
+    role = (prose_adversary_role() if getattr(check, "role_kind", "rubric") == "prose"
+            else adversary_role())
+    res = run_agent(role, adversary_context(bundle, check, criteria, agg),
                     client, ctx, max_turns=TEXT_MAX_TURNS)
     log = {"check": check.id, "role": "adversary", "ok": res.ok, "findings": res.findings}
     return (_own(res.findings, check.id, allowed) if res.ok else []), log
