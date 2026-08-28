@@ -104,6 +104,45 @@ def test_run_factual_no_criteria_passes(tmp_path):
     assert res.passed is True and res.needs_human is False
 
 
+def test_factual_max_turns_exceeds_the_text_cap():
+    # The container agent is exploratory: it must be allowed many more turns than
+    # the single-turn text checks, or a real multi-command verification degrades
+    # to needs_human (regression that shipped: default 12 was too tight).
+    from autoqc.agent.engine import FACTUAL_MAX_TURNS
+    assert FACTUAL_MAX_TURNS > 12
+
+
+def _explore_then_submit(explore_turns, passed=True, ev=("x.go:1",)):
+    """Responder that calls run_bash for `explore_turns` turns, then submits one
+    passing finding per criterion. Reproduces the live behaviour where the agent
+    reads/executes for many turns before it is ready to submit."""
+    def r(messages, tools):
+        import re
+        bash_turns = sum(1 for m in messages if m.get("role") == "tool")
+        if bash_turns < explore_turns:
+            return {"tool_calls": [{"id": f"b{bash_turns}", "name": "run_bash",
+                                    "args": {"cmd": f"grep -n foo file{bash_turns}.py"}}]}
+        user = next(m["content"] for m in messages if m["role"] == "user")
+        ids = re.findall(r"criterion_id=(\S+)", user)
+        return {"tool_calls": [{"id": "s", "name": "submit_findings", "args": {
+            "findings": [_f(i, passed, list(ev)) for i in ids]}}]}
+    return r
+
+
+class _EchoContainer:
+    def exec(self, cmd, cwd="/testbed", timeout=None):
+        return f"out: {cmd}"
+
+
+def test_run_factual_allows_long_exploration_before_submit(tmp_path):
+    # 20 exploration turns (well past the old 12 cap) then submit -> must succeed,
+    # not degrade to needs_human. With max_turns=12 this would hit the cap first.
+    ctx = AgentContext(bundle_dir=tmp_path, container=_EchoContainer())
+    b = _bundle_with([{"id": "1.1", "title": "t"}])
+    res = run_factual(b, FakeLLMClient(_explore_then_submit(20, passed=True)), ctx)
+    assert res.passed is True and res.needs_human is False  # submitted, not timed out
+
+
 def test_run_factual_votes_log_records_both_rounds(tmp_path):
     ctx = AgentContext(bundle_dir=tmp_path, container=None)
     b = _bundle_with([{"id": "1.1", "title": "t"}])
