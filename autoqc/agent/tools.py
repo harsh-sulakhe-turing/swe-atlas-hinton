@@ -4,8 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-CHECK_IDS = {f"Q{n:02d}" for n in range(1, 13)}
-ALLOWED_READ = {"tests/prompt.txt", "tests/rubrics.json", "solution/answer.txt", "task.toml"}
+CHECK_IDS = ({f"Q{n:02d}" for n in range(1, 14)}
+             | {"P01", "P02", "P03", "P04",
+                "A01", "A02", "A03", "A04", "A05", "A06",
+                "AL01", "H01"})
+ALLOWED_READ = {"tests/prompt.txt", "tests/rubrics.json", "solution/answer.txt",
+                "task.toml", "instruction.md"}
 
 
 @dataclass
