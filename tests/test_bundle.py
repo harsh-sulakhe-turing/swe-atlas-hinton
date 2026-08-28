@@ -74,3 +74,16 @@ def test_non_utf8_rubrics_not_raised(tmp_path):
     # Should not raise
     assert b.rubrics is None
     assert b.rubrics_error is not None
+
+
+def test_load_bundle_reads_instruction_md(tmp_path):
+    from autoqc.bundle import load_bundle
+    (tmp_path / "instruction.md").write_text("the rendered prompt")
+    b = load_bundle(tmp_path)
+    assert b.instruction == "the rendered prompt"
+
+
+def test_load_bundle_instruction_absent_is_none(tmp_path):
+    from autoqc.bundle import load_bundle
+    b = load_bundle(tmp_path)
+    assert b.instruction is None
