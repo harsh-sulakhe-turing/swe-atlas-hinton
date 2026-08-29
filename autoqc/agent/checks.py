@@ -313,6 +313,49 @@ def factual_context(bundle, criteria) -> str:
             "lacks it. Evidence must cite path:line.")
 
 
+_GROUNDED_PROMPT_SYS = (
+    "You verify, against the real repository checked out at /testbed (base_commit, "
+    "network-isolated), whether a SWE task PROMPT genuinely requires exploring the codebase. "
+    "Use run_bash (cat/grep/rg/find/ls/git) to judge whether a correct answer could be given "
+    "from general knowledge alone, or truly needs repo-specific investigation. Finish with "
+    "submit_findings: exactly one finding; evidence must include a path:line citation.")
+
+_GROUNDED_ANSWER_SYS = (
+    "You verify, against the real repository at /testbed (base_commit, network-isolated), "
+    "whether a task's reference ANSWER is trajectory-like: it must demonstrate genuine codebase "
+    "exploration and must NOT be a bare direct answer NOR a raw full-trajectory dump. Use "
+    "run_bash to confirm the answer's cited paths/mechanisms are real and that answering "
+    "required exploration. Finish with submit_findings: one finding; evidence must cite path:line.")
+
+def grounded_prompt_role() -> Role:
+    return Role(name="grounded_prompt", system_prompt=_GROUNDED_PROMPT_SYS, tools=factual_tools())
+
+def grounded_answer_role() -> Role:
+    return Role(name="grounded_answer", system_prompt=_GROUNDED_ANSWER_SYS, tools=factual_tools())
+
+def _grounded_head(bundle) -> str:
+    return (f"Repository: {getattr(bundle, 'repository', '') or ''} at base_commit "
+            f"{getattr(bundle, 'base_commit', '') or ''} (checked out at /testbed).\n\n")
+
+def grounded_prompt_context(bundle) -> str:
+    return (_grounded_head(bundle) +
+            f"Task prompt (tests/prompt.txt):\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+            "Check P04 — Requires codebase exploration. VIOLATES (passed=false) if a correct "
+            "answer could be produced without exploring THIS repo (general knowledge / direct "
+            "answer). passed=true if answering demands repo-specific investigation. Submit EXACTLY "
+            "ONE finding: check_id=P04, criterion_id=\"prompt\"; evidence must cite path:line.")
+
+def grounded_answer_context(bundle) -> str:
+    return (_grounded_head(bundle) +
+            f"Task prompt:\n{getattr(bundle, 'prompt', '') or ''}\n\n"
+            f"Reference answer (solution/answer.txt):\n{getattr(bundle, 'answer', '') or ''}\n\n"
+            "Check A06 — Trajectory-like exploration. VIOLATES (passed=false) if the answer is a "
+            "bare direct answer with no exploration, OR a raw full-trajectory dump, OR its cited "
+            "exploration does not hold up against the repo. passed=true if it shows genuine, real "
+            "codebase exploration. Submit EXACTLY ONE finding: check_id=A06, "
+            "criterion_id=\"answer\"; evidence must cite path:line.")
+
+
 def adversary_context(bundle, check, criteria, agg) -> str:
     if check.unit_mode in ("prompt", "answer", "bundle"):
         unit = check.unit_mode
