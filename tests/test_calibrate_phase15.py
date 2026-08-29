@@ -1,7 +1,5 @@
 from scripts.calibrate_phase15 import summarize_phase15
 
-PHASE15_IDS = {"P01","P02","P03","P04","A01","A02","A03","A04","A05","A06","AL01","H01","Q13"}
-
 def _rec(results):
     return {"results": results}
 
@@ -23,3 +21,27 @@ def test_warn_and_disputed_are_not_false_fires():
         {"id": "P04", "severity": "reject", "passed": False, "needs_human": True}])]  # disputed -> human
     s = summarize_phase15(negatives=[], cleans=clean)
     assert s["reject_false_fires"] == 0
+
+def test_per_check_recall_fires_separates_from_false_fires():
+    # negative-side fire should appear only in recall_fires
+    neg = [_rec([{"id": "P01", "severity": "reject", "passed": False, "needs_human": False}])]
+    # clean-side fire should appear only in false_fires
+    clean = [_rec([{"id": "A04", "severity": "reject", "passed": False, "needs_human": False}])]
+    s = summarize_phase15(negatives=neg, cleans=clean)
+    assert s["per_check_recall_fires"] == {"P01": 1}
+    assert s["per_check_false_fires"] == {"A04": 1}
+
+def test_per_check_maps_count_multiple_fires_per_check():
+    # two negatives with same check -> count 2 in recall_fires
+    neg = [
+        _rec([{"id": "P02", "severity": "reject", "passed": False, "needs_human": False}]),
+        _rec([{"id": "P02", "severity": "reject", "passed": False, "needs_human": False}])
+    ]
+    # two cleans with same check -> count 2 in false_fires
+    clean = [
+        _rec([{"id": "A05", "severity": "reject", "passed": False, "needs_human": False}]),
+        _rec([{"id": "A05", "severity": "reject", "passed": False, "needs_human": False}])
+    ]
+    s = summarize_phase15(negatives=neg, cleans=clean)
+    assert s["per_check_recall_fires"] == {"P02": 2}
+    assert s["per_check_false_fires"] == {"A05": 2}

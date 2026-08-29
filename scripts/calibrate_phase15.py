@@ -18,17 +18,22 @@ def summarize_phase15(negatives: list[dict], cleans: list[dict]) -> dict:
     recalled = sum(1 for rec in negatives if _hard_reject_ids(rec))
     recall = (recalled / len(negatives)) if negatives else 0.0
     false_fires = sum(len(_hard_reject_ids(rec)) for rec in cleans)
-    fires: dict[str, int] = {}
-    for rec in negatives + cleans:
+    per_check_recall_fires: dict[str, int] = {}
+    per_check_false_fires: dict[str, int] = {}
+    for rec in negatives:
         for cid in _hard_reject_ids(rec):
-            fires[cid] = fires.get(cid, 0) + 1
+            per_check_recall_fires[cid] = per_check_recall_fires.get(cid, 0) + 1
+    for rec in cleans:
+        for cid in _hard_reject_ids(rec):
+            per_check_false_fires[cid] = per_check_false_fires.get(cid, 0) + 1
     return {"recall": recall, "recalled": recalled, "n_negatives": len(negatives),
-            "reject_false_fires": false_fires, "n_cleans": len(cleans), "per_check_fires": fires}
+            "reject_false_fires": false_fires, "n_cleans": len(cleans),
+            "per_check_recall_fires": per_check_recall_fires,
+            "per_check_false_fires": per_check_false_fires}
 
 def _run_dir(bundle_dirs: list[str]) -> list[dict]:
     import json
     from autoqc.cli import run
-    from autoqc.model import Verdict
     out = []
     for i, d in enumerate(bundle_dirs):
         od = Path("phase15_out") / f"b{i}"
@@ -37,6 +42,22 @@ def _run_dir(bundle_dirs: list[str]) -> list[dict]:
     return out
 
 def main(argv=None):
+    import os
+    from autoqc.llm import GatewayLLMClient
+
+    # Load .env into os.environ
+    env_path = Path(".env")
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k, v)
+
+    # Verify gateway client is available
+    client = GatewayLLMClient()
+    assert client.available(), ".env missing EVAL_API_KEY / EVAL_BASE_URL"
+
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--" not in argv:
         print("usage: calibrate_phase15.py <neg_dir>... -- <clean_dir>...", file=sys.stderr)
@@ -46,7 +67,8 @@ def main(argv=None):
     s = summarize_phase15(negs, cleans)
     print(f"recall={s['recall']:.2f} ({s['recalled']}/{s['n_negatives']})  "
           f"reject_false_fires={s['reject_false_fires']} over {s['n_cleans']} clean")
-    print("per-check fires:", s["per_check_fires"])
+    print("per-check recall fires:", s["per_check_recall_fires"])
+    print("per-check false fires:", s["per_check_false_fires"])
     return 0
 
 if __name__ == "__main__":
