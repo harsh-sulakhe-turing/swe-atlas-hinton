@@ -45,9 +45,10 @@ def _bundle_unit(items): return [{"id": "bundle"}]
 Q07 = SemanticCheck(
     id="Q07", name="Negative score-flip semantics", severity=Severity.REJECT, scope=_negatives,
     guidance=("A NEGATIVE criterion must state the FALSE assertion whose PRESENCE in an answer "
-              "should fail it (for example 'Claims that every retry uses exponential backoff'). "
-              "It VIOLATES this check if phrased as 'Does not claim...', as a required omission, "
-              "or as the correct behavior. passed=true means correctly phrased."))
+              "should fail it (that is, phrased as 'Claims that <the incorrect behavior>' — an "
+              "assertion the correct answer disproves). It VIOLATES this check if phrased as "
+              "'Does not claim...', as a required omission, or as the correct behavior. "
+              "passed=true means correctly phrased."))
 
 Q03 = SemanticCheck(
     id="Q03", name="No wildcard / escape hatch", severity=Severity.REJECT, scope=_all_criteria,
