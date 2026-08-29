@@ -4,6 +4,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Make the repo root importable when run directly as `python3 scripts/calibrate_phase15.py`
+# (sys.path[0] is the script's own dir; the autoqc package lives at the repo root).
+# Mirrors scripts/calibrate_clean.py.
+sys.path.insert(0, ".")
+
 PHASE15_IDS = {"P01","P02","P03","P04","A01","A02","A03","A04","A05","A06","AL01","H01","Q13"}
 
 def _hard_reject_ids(record) -> set[str]:
