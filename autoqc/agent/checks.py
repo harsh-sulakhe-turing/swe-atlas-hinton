@@ -177,6 +177,12 @@ Q13 = SemanticCheck(
               "runtime result that could only be produced by investigating the code, not by general "
               "knowledge. passed=true if at least one criterion forces demonstrated exploration."))
 
+# All semantic-text checks run through the shared proposer(K=3)+adversary ensemble
+# in autoqc/agent/engine.py. Phase 1 rubric-criterion checks: Q07, Q03, Q01, Q02,
+# Q05, Q04, Q08, Q10, Q11. Phase 1.5 whole-document/rubric checks added on top:
+# P02, P03 (prompt), A01-A05 (answer), AL01 (cross-file alignment), Q13 (rubric
+# exploration coverage). Q06, P04, and A06 are NOT here — they are grounded checks
+# run separately by run_grounded_stage against a live repo checkout.
 SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11,
                    P02, P03, A01, A02, A03, A04, A05, AL01, Q13]
 
