@@ -162,8 +162,23 @@ A05 = SemanticCheck(
               "read-only bash exploration (grep/cat/find/git plus temporary, cleaned-up probes). "
               "passed=true if the method is read-only bash investigation."))
 
+AL01 = SemanticCheck(
+    id="AL01", name="Files describe one task", severity=Severity.WARN, scope=_bundle_unit,
+    unit_mode="bundle", role_kind="prose",
+    guidance=("VIOLATES this if instruction.md, tests/prompt.txt, and solution/answer.txt do not "
+              "all describe the SAME task (different subject, repo, or question). Minor wording "
+              "differences are fine. passed=true if all three correspond to one task."))
+
+Q13 = SemanticCheck(
+    id="Q13", name="Rubric verifies exploration", severity=Severity.REJECT, scope=_all_criteria,
+    unit_mode="rubric",
+    guidance=("The rubric VIOLATES this if NO must-have criterion verifies that the model actually "
+              "EXPLORED the codebase — i.e. grades a repo-derived fact, path, mechanism, or observed "
+              "runtime result that could only be produced by investigating the code, not by general "
+              "knowledge. passed=true if at least one criterion forces demonstrated exploration."))
+
 SEMANTIC_CHECKS = [Q07, Q03, Q01, Q02, Q05, Q04, Q08, Q10, Q11,
-                   P02, P03, A01, A02, A03, A04, A05]
+                   P02, P03, A01, A02, A03, A04, A05, AL01, Q13]
 
 _PROPOSER_SYS = (
     "You are a strict, evidence-based QC reviewer of grading rubrics. Judge only the check and "

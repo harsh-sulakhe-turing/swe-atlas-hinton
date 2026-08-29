@@ -28,7 +28,7 @@ def _submit_all_pass(messages, tools):
     # submit passed=True for every criterion_id mentioned in the user context
     import re
     user = next(m["content"] for m in messages if m["role"] == "user")
-    cm = re.search(r"Check (Q\d\d|P\d\d|A\d\d)", user)
+    cm = re.search(r"Check (AL\d\d|Q\d\d|P\d\d|A\d\d)", user)
     check_id = cm.group(1) if cm else "Q07"
     if 'criterion_id="rubric"' in user:
         ids = ["rubric"]
@@ -154,10 +154,12 @@ def _submit_mixed(messages, tools):
     # verdict maps non-uniform (a reject + a needs_human), unlike the
     # all-pass responder used elsewhere in this file.
     user = next(m["content"] for m in messages if m["role"] == "user")
-    cm = re.search(r"Check (Q\d\d)", user)
+    cm = re.search(r"Check (AL\d\d|Q\d\d|P\d\d|A\d\d)", user)
     check_id = cm.group(1) if cm else "Q07"
     if 'criterion_id="rubric"' in user:
         ids = ["rubric"]
+    elif 'criterion_id="bundle"' in user:
+        ids = ["bundle"]
     else:
         ids = list(dict.fromkeys(re.findall(r"criterion_id=([0-9a-fA-F]{6,})", user))) or ["rubric"]
     is_adv = _is_adversary(messages)

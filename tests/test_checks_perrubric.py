@@ -12,7 +12,7 @@ def test_ids_severities_and_rubric_mode():
 
 def test_registry_full_set():
     ids = [c.id for c in SEMANTIC_CHECKS]
-    assert set(ids) == {"Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q10", "Q11", "P02", "P03", "A01", "A02", "A03", "A04", "A05"}
+    assert set(ids) == {"Q01", "Q02", "Q03", "Q04", "Q05", "Q07", "Q08", "Q10", "Q11", "P02", "P03", "A01", "A02", "A03", "A04", "A05", "AL01", "Q13"}
     assert len(ids) == len(set(ids))  # no dupes
 
 
