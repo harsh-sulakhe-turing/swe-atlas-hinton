@@ -19,6 +19,7 @@ def _good(tmp_path: Path):
     (tmp_path / "environment/Dockerfile").write_text("FROM x")
     (tmp_path / "task.toml").write_text(
         '[metadata]\nrepository="o/r"\nbase_commit="%s"\n' % ("a" * 40))
+    (tmp_path / "instruction.md").write_text("# A Good Instruction")
 
 
 def test_good_bundle_is_sound_and_writes_reports(tmp_path):
@@ -55,3 +56,20 @@ def test_malformed_bundle_is_not_sound(tmp_path):
     verdict = run(bundle, out, factual=False)
     assert verdict is Verdict.NOT_SOUND
     assert "Must fix" in (out / "report.md").read_text()
+
+
+def test_run_includes_text_deterministic_without_client(tmp_path):
+    from autoqc.cli import run
+    from autoqc.model import Verdict
+    # a bundle whose instruction.md is a placeholder -> P01 rejects, no client needed
+    (tmp_path / "instruction.md").write_text(
+        "<question>\nDescribe the developer's realistic, multi-part question here.\n</question>")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "rubrics.json").write_text("[]")
+    out = tmp_path / "out"
+    v = run(tmp_path, out, llm=None, factual=False)
+    import json
+    rec = json.loads((out / "review_record.json").read_text())
+    ids = {c["id"] for c in rec["results"]}
+    assert "P01" in ids and "H01" in ids
+    assert v is Verdict.NOT_SOUND  # P01 is an undisputed reject

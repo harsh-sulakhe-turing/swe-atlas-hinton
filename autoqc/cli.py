@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from autoqc.bundle import load_bundle
 from autoqc.structural import run_structural
+from autoqc.text_deterministic import TEXT_DETERMINISTIC_CHECKS
 from autoqc.verdict import compute_verdict
 from autoqc.report import to_record, to_markdown
 from autoqc.model import Verdict
@@ -17,6 +18,7 @@ _EXIT = {Verdict.SOUND: 0, Verdict.NEEDS_HUMAN_REVIEW: 1, Verdict.NOT_SOUND: 2}
 def run(bundle_dir, out_dir, llm=None, k: int = 3, factual: bool = True) -> Verdict:
     bundle = load_bundle(Path(bundle_dir))
     results = run_structural(bundle)
+    results += [fn(bundle) for fn in TEXT_DETERMINISTIC_CHECKS]
 
     client = llm if llm is not None else default_client()
     if client is not None:

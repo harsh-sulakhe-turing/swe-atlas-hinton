@@ -25,6 +25,7 @@ class Bundle:
     rubrics_error: str | None
     prompt: str | None
     answer: str | None
+    instruction: str | None
     task_toml: dict | None
     repository: str | None
     base_commit: str | None
@@ -79,6 +80,7 @@ def load_bundle(root: Path) -> Bundle:
         rubrics_error=rubrics_error,
         prompt=_read_text(root / "tests/prompt.txt"),
         answer=_read_text(root / "solution/answer.txt"),
+        instruction=_read_text(root / "instruction.md"),
         task_toml=task_toml,
         repository=repository,
         base_commit=base_commit,

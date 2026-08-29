@@ -8,7 +8,10 @@ from autoqc.model import CheckResult, Stage, Severity
 from autoqc.agent.runner import run_agent
 from autoqc.agent.checks import (SEMANTIC_CHECKS, proposer_role, adversary_role,
                                  proposer_context, adversary_context,
-                                 Q06, factual_role, factual_context)
+                                 Q06, factual_role, factual_context,
+                                 prose_proposer_role, prose_adversary_role,
+                                 grounded_prompt_role, grounded_answer_role,
+                                 grounded_prompt_context, grounded_answer_context)
 from autoqc.agent.tools import validate_findings, AgentContext
 from autoqc.agent.deterministic import DETERMINISTIC_CHECKS
 from autoqc.agent.container import ContainerSession, docker_available, ContainerError
@@ -95,14 +98,18 @@ def _check_prep(check, bundle):
 
 
 def proposer_pass(check, bundle, client, ctx, criteria, allowed):
-    res = run_agent(proposer_role(), proposer_context(bundle, check, criteria),
+    role = (prose_proposer_role() if getattr(check, "role_kind", "rubric") == "prose"
+            else proposer_role())
+    res = run_agent(role, proposer_context(bundle, check, criteria),
                     client, ctx, max_turns=TEXT_MAX_TURNS)
     log = {"check": check.id, "role": "proposer", "ok": res.ok, "findings": res.findings}
     return (_own(res.findings, check.id, allowed) if res.ok else []), log
 
 
 def adversary_pass(check, bundle, client, ctx, criteria, allowed, agg):
-    res = run_agent(adversary_role(), adversary_context(bundle, check, criteria, agg),
+    role = (prose_adversary_role() if getattr(check, "role_kind", "rubric") == "prose"
+            else adversary_role())
+    res = run_agent(role, adversary_context(bundle, check, criteria, agg),
                     client, ctx, max_turns=TEXT_MAX_TURNS)
     log = {"check": check.id, "role": "adversary", "ok": res.ok, "findings": res.findings}
     return (_own(res.findings, check.id, allowed) if res.ok else []), log
@@ -223,7 +230,7 @@ def run_semantic(bundle, client, ctx, checks=SEMANTIC_CHECKS, k=3, votes_log=Non
     results = run_checks_parallel(checks, bundle, client, ctx, k, votes_log=votes_log)
     results += [fn(bundle) for fn in DETERMINISTIC_CHECKS]
     if factual:
-        results.append(run_factual_stage(bundle, client, votes_log=votes_log))
+        results += run_grounded_stage(bundle, client, votes_log=votes_log)
     return results
 
 
@@ -329,5 +336,75 @@ def run_factual_stage(bundle, client, votes_log=None, limits=None,
         return run_factual(bundle, client, ctx, votes_log=votes_log)
     except Exception as e:
         return _q06_needs_human(f"factual pass error: {e}")
+    finally:
+        session.stop()
+
+
+def _grounded_needs_human(cid, name, severity, reason) -> CheckResult:
+    return CheckResult(id=cid, name=name, stage=Stage.FACTUAL, severity=severity,
+                       passed=False, needs_human=True, detail=f"{cid} not run: {reason}")
+
+
+def run_grounded_prose(cid, name, severity, role, context_text, client, ctx,
+                       unit, votes_log=None) -> CheckResult:
+    rounds = []
+    for _ in range(2):
+        res = run_agent(role, context_text, client, ctx, max_turns=FACTUAL_MAX_TURNS)
+        if votes_log is not None:
+            votes_log.append({"check": cid, "role": "grounded", "ok": res.ok, "findings": res.findings})
+        own = _own(res.findings, cid, {unit}) if res.ok else []
+        v = next((f for f in own if f.get("criterion_id") == unit), None)
+        rounds.append((bool(v.get("passed")) if v else None,
+                       _files(v.get("evidence")) if v else set(),
+                       list(v.get("evidence") or []) if v else []))
+    (p1, f1, e1), (p2, f2, e2) = rounds
+    evidence = (e1 + e2)[:20]
+    if p1 is None or p2 is None or p1 != p2:
+        return CheckResult(id=cid, name=name, stage=Stage.FACTUAL, severity=severity,
+                           passed=False, needs_human=True, evidence=evidence,
+                           detail="grounded rounds disagreed or did not submit")
+    if p1:
+        return CheckResult(id=cid, name=name, stage=Stage.FACTUAL, severity=severity,
+                           passed=True, evidence=evidence)
+    same = bool(f1 & f2)
+    return CheckResult(id=cid, name=name, stage=Stage.FACTUAL, severity=severity,
+                       passed=False, needs_human=not same, evidence=evidence,
+                       detail="grounded rounds agree the document violates the check")
+
+
+def run_grounded_stage(bundle, client, votes_log=None, limits=None,
+                       docker=docker_available) -> list[CheckResult]:
+    specs = [("Q06", Q06.name, Severity.REJECT),
+             ("P04", "Requires codebase exploration", Severity.REJECT),
+             ("A06", "Trajectory-like exploration", Severity.REJECT)]
+    def _all_needs_human(reason):
+        return [_grounded_needs_human(cid, name, sev, reason) for cid, name, sev in specs]
+
+    if not getattr(bundle, "files_present", {}).get("environment/Dockerfile", True):
+        return _all_needs_human("no environment/Dockerfile in bundle")
+    if not docker():
+        return _all_needs_human("Docker is not available")
+    try:
+        session = ContainerSession(bundle, limits=limits)
+        session.ensure_image()
+        session.start()
+    except ContainerError as e:
+        return _all_needs_human(str(e))
+    except Exception as e:
+        return _all_needs_human(f"container setup error: {e}")
+    try:
+        ctx = AgentContext(bundle_dir=bundle.root, container=session)
+        out = [run_factual(bundle, client, ctx, votes_log=votes_log)]
+        out.append(run_grounded_prose(
+            "P04", "Requires codebase exploration", Severity.REJECT,
+            grounded_prompt_role(), grounded_prompt_context(bundle), client, ctx,
+            "prompt", votes_log=votes_log))
+        out.append(run_grounded_prose(
+            "A06", "Trajectory-like exploration", Severity.REJECT,
+            grounded_answer_role(), grounded_answer_context(bundle), client, ctx,
+            "answer", votes_log=votes_log))
+        return out
+    except Exception as e:
+        return _all_needs_human(f"grounded pass error: {e}")
     finally:
         session.stop()

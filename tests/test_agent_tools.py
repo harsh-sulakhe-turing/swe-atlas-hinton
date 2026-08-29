@@ -138,3 +138,20 @@ def test_run_bash_wraps_container_exception():
 def test_text_tools_is_submit_only():
     names = [t.name for t in text_tools()]
     assert names == ["submit_findings"]
+
+
+# Phase 1.5 check ID and read allow-list tests
+from autoqc.agent.tools import ALLOWED_READ
+
+def test_check_ids_include_phase15():
+    for cid in ("Q13", "P01", "P04", "A01", "A06", "AL01", "H01"):
+        assert cid in CHECK_IDS
+
+def test_validate_findings_accepts_answer_unit():
+    valid, problems = validate_findings(
+        [{"check_id": "A01", "criterion_id": "answer", "passed": True, "evidence": ["ok"]}],
+        {"answer"})
+    assert len(valid) == 1 and problems == []
+
+def test_instruction_is_readable():
+    assert "instruction.md" in ALLOWED_READ

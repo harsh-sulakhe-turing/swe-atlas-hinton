@@ -9,10 +9,16 @@ from autoqc.model import Verdict
 
 def _extract(messages):
     txt = " ".join(m.get("content", "") for m in messages)
-    cm = re.search(r"check_id=(Q\d\d)", txt)
+    cm = re.search(r"check_id=(AL\d\d|Q\d\d|P\d\d|A\d\d)", txt)
     cid = cm.group(1) if cm else "Q07"
     if 'criterion_id="rubric"' in txt:      # rubric-mode checks submit ONE "rubric" finding
         ids = ["rubric"]
+    elif 'criterion_id="prompt"' in txt:    # prose checks on prompt
+        ids = ["prompt"]
+    elif 'criterion_id="answer"' in txt:    # prose checks on answer
+        ids = ["answer"]
+    elif 'criterion_id="bundle"' in txt:    # prose checks on bundle
+        ids = ["bundle"]
     else:
         ids = list(dict.fromkeys(re.findall(r"criterion_id=([0-9a-fA-F]{6,})", txt))) or ["rubric"]
     return cid, ids
@@ -41,6 +47,7 @@ def _bundle(root: Path, neg_title):
     (root / "solution").mkdir(); (root / "solution/answer.txt").write_text("a")
     (root / "environment").mkdir(); (root / "environment/Dockerfile").write_text("FROM x")
     (root / "task.toml").write_text('[metadata]\nrepository="o/r"\nbase_commit="%s"\n' % ("a" * 40))
+    (root / "instruction.md").write_text("# A Good Instruction")
 
 
 def test_semantic_runs_with_client_all_pass(tmp_path):
